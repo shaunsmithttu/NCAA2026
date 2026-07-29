@@ -14,7 +14,8 @@ from fastapi.responses import PlainTextResponse
 from .config import CORS_ORIGINS
 from .db import get_conn, init_db
 from .models import (AdjudicateRequest, BuildRequest, CalibrationRequest,
-                     ChalkRequest, ExportRequest, RuleUpdate, SimOverlayRequest,
+                     ChalkRequest, ExportRequest, ParseLineupsRequest,
+                     RuleUpdate, SimOverlayBuildRequest, SimOverlayRequest,
                      SlateCreate, TransformRequest, ValidateRequest)
 from .services import (chalk, dk_export, discarded_signals, ingest, optimizer,
                        ownership, postmortem, rules_ledger, sim_overlay, validate)
@@ -158,6 +159,59 @@ def api_export(req: ExportRequest) -> PlainTextResponse:
 def api_sim_overlay(req: SimOverlayRequest) -> dict:
     return sim_overlay.coverage_overlay(req.sim_portfolio, req.coverage_lineups,
                                         req.coverage_pct)
+
+
+@app.post("/api/lineups/parse")
+def api_parse_lineups(req: ParseLineupsRequest) -> dict:
+    """Parse a sim/DK-format lineup CSV, mapping cells onto the reconciled pool."""
+    return ingest.parse_lineup_rows(req.csv_text, req.players)
+
+
+@app.post("/api/build/sim-overlay")
+def api_build_sim_overlay(req: SimOverlayBuildRequest) -> dict:
+    """Sim-overlay build (spec S2 #10, #12): the sim portfolio is the allocation
+    baseline — the in-house optimizer never re-shapes it. Only a fixed-budget
+    coverage overlay swaps in over the sim's lowest-projection lineups. The
+    UNTOUCHED sim baseline is persisted alongside the final build for scoring."""
+    if not req.sim_portfolio:
+        raise HTTPException(400, "sim_portfolio is empty — upload the sim's final portfolio.")
+    if req.coverage_lineups:
+        overlay = sim_overlay.coverage_overlay(
+            req.sim_portfolio, req.coverage_lineups, req.coverage_pct)
+        final = overlay["final_portfolio"]
+    else:
+        # no coverage lineups supplied: baseline ships untouched (still stored)
+        overlay = {"final_portfolio": req.sim_portfolio,
+                   "sim_baseline": req.sim_portfolio, "n_coverage_swapped": 0,
+                   "coverage_pct": req.coverage_pct, "swap_log": [],
+                   "warning": "No coverage lineups supplied — sim baseline shipped untouched."}
+        final = req.sim_portfolio
+
+    ctx = dict(req.ctx)
+    ctx.update(contest_shape=req.contest_shape, field_size=req.field_size,
+               slate_id=req.slate_id)
+    ctx.setdefault("unadjudicated_blocked_signals",
+                   discarded_signals.count_unadjudicated(req.slate_id))
+    report = validate.validate_portfolio(final, ctx)
+
+    with get_conn() as conn:
+        cur = conn.execute(
+            """INSERT INTO builds (slate_id, mode, contest_shape, n_lineups,
+                                   objective, lineups_json, sim_baseline_json,
+                                   validation_json, chalk_json)
+               VALUES (?,?,?,?,?,?,?,?,?)""",
+            (req.slate_id, "sim_overlay", req.contest_shape, len(final),
+             "sim_baseline", json.dumps(final), json.dumps(overlay["sim_baseline"]),
+             json.dumps(report), json.dumps(req.chalk) if req.chalk else None))
+        build_id = cur.lastrowid
+
+    return {"build_id": build_id, "mode": "sim_overlay",
+            "final_portfolio": final, "sim_baseline": overlay["sim_baseline"],
+            "n_entries": len(final), "n_coverage_swapped": overlay["n_coverage_swapped"],
+            "coverage_pct": overlay["coverage_pct"], "swap_log": overlay["swap_log"],
+            "warning": overlay["warning"], "validation": report,
+            "unadjudicated_blocked_signals":
+                discarded_signals.count_unadjudicated(req.slate_id)}
 
 
 # ---------------------------------------------------------------------------

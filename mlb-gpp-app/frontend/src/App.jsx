@@ -3,6 +3,7 @@ import { api } from './lib/api.js'
 import Ingest from './components/Ingest.jsx'
 import ChalkPanel from './components/ChalkPanel.jsx'
 import BuildPanel from './components/BuildPanel.jsx'
+import SimOverlay from './components/SimOverlay.jsx'
 import DiscardedSignals from './components/DiscardedSignals.jsx'
 import RulesLedger from './components/RulesLedger.jsx'
 import PostMortem from './components/PostMortem.jsx'
@@ -13,6 +14,7 @@ const TABS = [
   { id: 'ingest', label: '1 · Ingest & Validate' },
   { id: 'gates', label: '2 · Gate Analysis' },
   { id: 'build', label: '3 · Build & Export' },
+  { id: 'simoverlay', label: '3b · Sim Overlay' },
   { id: 'postmortem', label: '4 · Post-Mortem' },
   { id: 'rules', label: '5 · Rules Ledger' },
 ]
@@ -62,6 +64,7 @@ export default function App() {
         {tab === 'build' && (
           <BuildPanel pool={pool} slate={slate} chalk={chalk} build={build} setBuild={setBuild} />
         )}
+        {tab === 'simoverlay' && <SimOverlay pool={pool} slate={slate} />}
         {tab === 'postmortem' && <PostMortem slate={slate} build={build} />}
         {tab === 'rules' && <RulesLedger />}
       </main>

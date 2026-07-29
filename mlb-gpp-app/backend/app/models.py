@@ -72,6 +72,22 @@ class SimOverlayRequest(BaseModel):
     coverage_pct: float = 10.0
 
 
+class ParseLineupsRequest(BaseModel):
+    csv_text: str
+    players: list[dict[str, Any]]           # the reconciled pool to map onto
+
+
+class SimOverlayBuildRequest(BaseModel):
+    sim_portfolio: list[list[dict[str, Any]]]
+    coverage_lineups: list[list[dict[str, Any]]] = []
+    coverage_pct: float = 10.0
+    contest_shape: str = "large_field_gpp"
+    field_size: Optional[int] = None
+    slate_id: Optional[int] = None
+    ctx: dict[str, Any] = {}
+    chalk: Optional[dict[str, Any]] = None
+
+
 class CalibrationRequest(BaseModel):
     slate_id: Optional[int] = None
     slate_date: str

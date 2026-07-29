@@ -55,6 +55,9 @@ export const api = {
   adjudicate: (signal_id, decision, reason) =>
     j('POST', '/api/signals/adjudicate', { signal_id, decision, reason }),
 
+  parseLineups: (csv_text, players) => j('POST', '/api/lineups/parse', { csv_text, players }),
+  buildSimOverlay: (payload) => j('POST', '/api/build/sim-overlay', payload),
+
   calibration: () => j('GET', '/api/calibration'),
   slates: () => j('GET', '/api/slates'),
   createSlate: (payload) => j('POST', '/api/slates', payload),

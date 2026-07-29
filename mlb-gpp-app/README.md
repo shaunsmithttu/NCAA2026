@@ -73,6 +73,12 @@ python -m tests.test_integration     # DK CSV parse -> build -> export, end to e
    no hitter-vs-rostered-pitcher, dead-bat cap (#49), and ceiling-bat (#52) as
    **hard constraints**. Export is **hard-gated** on `validate()` clearing AND
    zero unadjudicated Rule #53 signals.
+3b. **Sim Overlay** — upload the sim's final portfolio (DK/sim CSV); it's mapped
+   back onto the reconciled pool and treated as the **allocation baseline**. The
+   in-house optimizer never re-shapes it — only a **fixed-budget coverage overlay**
+   (7–13%, swapped over the sim's lowest-projection lineups; generated or
+   uploaded) plus surgical info fixes. The **untouched baseline is stored** with
+   the build for side-by-side scoring, and export is the same hard-gated path.
 4. **Post-Mortem** — upload DK standings → field distribution, winner, actual
    ownership. The **ownership calibration curve** persists projected-vs-actual
    pairs every slate (the open item behind Rule #51's provisional multipliers).
@@ -91,8 +97,8 @@ python -m tests.test_integration     # DK CSV parse -> build -> export, end to e
 - **Sim-overlay mode** (`app/services/sim_overlay.py`) treats an uploaded sim
   portfolio as the allocation baseline, applies only a fixed-budget coverage
   overlay (7–13%) + surgical info fixes, and **always stores the untouched sim
-  baseline** for side-by-side scoring (spec §2 D12). Wiring a full sim-pool
-  upload screen is the natural next step.
+  baseline** for side-by-side scoring (spec §2 D12). Driven from the **Sim Overlay**
+  tab (upload sim final portfolio → parse onto pool → coverage overlay → gated export).
 
 ## Layout
 

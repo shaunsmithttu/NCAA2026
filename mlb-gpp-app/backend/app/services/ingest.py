@@ -215,6 +215,91 @@ def confirmed_hitters(projections: list[Projection]) -> list[Projection]:
             and p.order is not None]
 
 
+_SLOT_ORDER = ["P", "P", "C", "1B", "2B", "3B", "SS", "OF", "OF", "OF"]
+_DK_HEADER = ["p", "p", "c", "1b", "2b", "3b", "ss", "of", "of", "of"]
+
+
+def _assign_slots(players: list[dict]) -> list[dict]:
+    """Greedy/backtracking assignment of a set of players onto the DK slot
+    template honouring combined eligibility. Sets each player's 'slot' and
+    returns them in slot order. Leaves 'slot' blank if no legal assignment."""
+    def eligible(p, slot):
+        if slot == "P":
+            return p.get("is_pitcher")
+        if p.get("is_pitcher"):
+            return False
+        return slot in [x.upper() for x in (p.get("positions") or [])]
+
+    slots = list(_SLOT_ORDER)
+    assign: dict[int, str] = {}
+
+    def bt(si):
+        if si == len(slots):
+            return True
+        for i, p in enumerate(players):
+            if i in assign:
+                continue
+            if eligible(p, slots[si]):
+                assign[i] = slots[si]
+                if bt(si + 1):
+                    return True
+                del assign[i]
+        return False
+
+    ordered = []
+    if bt(0):
+        for slot in _SLOT_ORDER:
+            for i, p in enumerate(players):
+                if assign.get(i) == slot and not any(id(o) == id(p) for o in ordered):
+                    ordered.append({**p, "slot": slot})
+                    break
+        return ordered
+    return [{**p, "slot": ""} for p in players]
+
+
+def parse_lineup_rows(csv_text: str, pool_players: list[dict]) -> dict:
+    """Parse a sim/DK-format lineup CSV and map each cell back onto the
+    reconciled pool (spec S2 A: the sim's final portfolio + lineup pool upload).
+
+    Cells look like 'Aaron Judge (12345)' or just 'Aaron Judge'. Players are
+    resolved by DK id first, then by normalized name. Returns lineups (each a
+    list of player dicts with 'slot' set) plus any unresolved cells."""
+    by_id: dict[str, dict] = {}
+    by_name: dict[str, dict] = {}
+    for p in pool_players:
+        if p.get("dk_id"):
+            by_id[str(p["dk_id"])] = p
+        by_name.setdefault(norm_name(p["name"]), p)
+
+    rows = list(csv.reader(io.StringIO(csv_text)))
+    lineups, unresolved = [], []
+    for r in rows:
+        cells = [c.strip() for c in r if c and c.strip()]
+        if not cells:
+            continue
+        # skip a DK header row
+        low = [re.sub(r"[^a-z0-9]", "", c.lower()) for c in cells]
+        if low[:10] == _DK_HEADER:
+            continue
+        found = []
+        for c in cells:
+            m = re.search(r"\((\d+)\)", c)
+            player = None
+            if m and m.group(1) in by_id:
+                player = by_id[m.group(1)]
+            else:
+                nm = norm_name(re.sub(r"\(\d+\)", "", c))
+                player = by_name.get(nm)
+            if player is not None:
+                found.append(player)
+            elif re.search(r"[a-zA-Z]", c):
+                unresolved.append(c)
+        if len(found) >= 8:                       # tolerate a stray column or two
+            lineups.append(_assign_slots(found[:10]))
+    return {"lineups": lineups, "n_lineups": len(lineups),
+            "unresolved": sorted(set(unresolved))}
+
+
 def reconcile(dk_players: list[DKPlayer],
               projections: list[Projection]) -> dict:
     """Join projections onto the authoritative DK pool via the three-part key.
