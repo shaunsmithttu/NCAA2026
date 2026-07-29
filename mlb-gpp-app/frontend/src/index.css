@@ -1,0 +1,16 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root { color-scheme: dark; }
+body { @apply bg-slate-950 text-slate-100; }
+
+.card { @apply bg-slate-900 border border-slate-800 rounded-xl p-4; }
+.btn { @apply px-3 py-1.5 rounded-lg text-sm font-medium transition-colors; }
+.btn-primary { @apply btn bg-emerald-600 hover:bg-emerald-500 text-white disabled:opacity-40 disabled:cursor-not-allowed; }
+.btn-ghost { @apply btn bg-slate-800 hover:bg-slate-700 text-slate-200; }
+.tag { @apply inline-block px-2 py-0.5 rounded text-xs font-semibold; }
+.pill-pass { @apply tag bg-emerald-900 text-emerald-300; }
+.pill-fail { @apply tag bg-rose-900 text-rose-300; }
+.pill-warn { @apply tag bg-amber-900 text-amber-300; }
+.pill-info { @apply tag bg-slate-800 text-slate-400; }

@@ -1,0 +1,136 @@
+MLB GPP Master Playbook v4 — DraftKings
+DraftKings Daily Fantasy — Tournament Construction Methodology
+Baseball build of the portable DFS process. Ledger current through Rule #53 (propagated from the July 28, 2026 post-mortem), then consolidated: 5 rules folded, 48 active. One further candidate rule declined under governance. Supersedes v3.
+
+THE TWO THINGS THAT ARE THE FRAMEWORK — (1) Contest-shape first (Section 5). Classify the payout curve before any player decision. Same player pool + wrong shape = cash and still lose money. (2) Post-mortem cadence (Section 9). Most leaks are a nameable allocation error — a plug, not a rebuild. But a leak can also be a STANDING RULE pointing the wrong way (June 30); when two+ losses share a root, audit the rules themselves.
+NEW IN v4 — the July 28 loss was caused by a rule, not an allocation. Rule #45 excluded three of the slate’s five best offenses one day after Rule #47 established that single factors are weights. v4 resolves that contradiction (#50) and converts the two clauses of #44 that were written but never enforced into hard build constraints (#49, #52).
+0 — Ground-Truth the Scoring
+Every edge must trace to a specific line in the DK scoring rules. Re-confirm roster construction each slate before building.
+
+Roster: 2 P, 1 C, 1 1B, 1 2B, 1 3B, 1 SS, 3 OF. $50,000 cap; standing floor $48,500. Max 5 hitters from one team — the reason the 5-man stack is the organizing unit. Lineup spans ≥2 games. A pitcher may sit with his own team’s bat stack (positive correlation).
+THE EDGE QUESTION — Strikeouts (+2): floor that builds regardless of the win. Walks + HBP (+2): cheap plate-appearance value the field ignores chasing power. The total-base ladder (3/5/8/10): doubles and triples are over-rewarded vs how the field prices contact.
+1 — The Structural Edge: Casual-Field Behavior
+The casual field over-owns famous names (50–70%) and underprices role and floor. Underweight fame in its obvious spots; overweight the underowned contributor.
+— Fade the obvious ace + famous offense — but classify WHY the arm is chalk first (Rule #38). Narrative chalk fades hard; structural chalk gets eaten.
+— Target leverage stacks of underowned offenses in good park/total spots, and the contrarian SP with real ceiling (Rule #8).
+— CAVEAT ADDED v4: all of the above assumes a casual field. In small, high-buy-in fields the crowd is already dispersed and there is little fame premium to harvest — see Rule #51.
+5 — Contest Shape (classify BEFORE any player decision)
+Determine the payout curve first. Steep top-heavy (25%+ of pool to 1st) = ceiling-first, dead bats tolerated. Flat/wide = consistency.
+Below ~1,000 entries: switch the optimizer objective per Rule #44, AND enforce the hard dead-bat cap (#49) and the ceiling-bat requirement (#52). These are build constraints, not weights.
+FIELD SIZE SETS THE OWNERSHIP TRANSFORM BEFORE ANY LEVERAGE MATH: above ~500 entries apply Rule #42 (chalk amplifies); below ~500 apply Rule #51 (chalk deflates, tails inflate) and expect leverage to be worth very little.
+7 — validate() — run on every file before handoff
+— Positions sourced from the DK entries file, parsing COMBINED eligibility (‘1B/OF’) correctly (Rule #6).
+— PLAYER ID KEYING (added v4): resolve every DK player ID on the three-part key (name, team, is-pitcher). Name-only keys silently collide on 20-team slates. 7/28 had two Jose Fermins; the name-keyed map wrote the PITCHER’s ID into a 3B and an OF slot. DK rejected it only because the collision was hitter-on-pitcher — a hitter-on-hitter collision uploads clean and rosters the wrong player.
+— Salary floor $48,500, cap $50,000 (Rule #2). Roster legality: 10 slots; max 5 hitters/team; spans ≥2 games.
+— Negative-correlation check: no hitter facing a rostered pitcher.
+— DEAD-BAT CAP (Rule #49, added v4): below ~1,000 entries, REJECT any lineup with more than one hitter under the dk25 floor. Hard fail, not a warning.
+— CEILING BAT (Rule #52, added v4): in small-field WTA, REJECT any lineup whose highest-dk95 hitter falls under the 25-point threshold.
+— TOP-5 COVERAGE (Rule #50, added v4): REJECT any PORTFOLIO with zero exposure to a team ranked top 5 by projected stack median or implied total.
+— BLOCKED-SIGNAL ADJUDICATION (Rule #53, added v4): refuse handoff while any rescan-surfaced sub-2% / xSLG ≥ .45 bat remains unadjudicated in the discarded-signal log.
+— STACK-SIDE TEAM-IDENTITY ASSERTION (Rule #45, retained): for each stack, resolve the OPPOSING SP from the game string and assert his team ≠ the stack’s team. Fail the build. (The CLEAR/BLOCK gate verdict is retired — see #50.)
+— WEATHER-STATE CHECK (Rule #48): any game in an ANNOUNCED delay at lock caps at 3 bats per lineup and ≤1/3 of portfolio stacks.
+— Single-player hitter cap 50% (Rule #13); single-SP cap ~20% (Rule #33). Both unenforceable below ~6 lineups — the granularity floor at n=3 is 33%.
+— Lock-state confirmed batting order via the actual lineup card, never the projections status column. Hash dedup (Rule #5).
+8 — Ownership Smell Test
+— Distinguish concentrated chalk from distributed stack ownership. One or two bats at 25%+ is a fade signal; a popular TEAM whose bats are each 4–11% owned is NOT (Rule #29). The inverse also holds: an aggregate 130% with ZERO sub-10% bats is a true trap (BOS 7/27, 0.48× lift; BOS again 7/28, 13th of 18).
+— Apply the ownership transform the moment the entry fee AND field size are known: #42 above ~500 entries, #51 below. Recompute the sub-4% dart pool AFTER the transform.
+— VERIFY THE TRANSFORM AGAINST REALISED OWNERSHIP EVERY SLATE (added v4). Two slates of projected-vs-actual data is not a calibration curve. Log the ratios; #51’s multipliers are provisional.
+— Reconcile projected ownership against betting odds. A strong play at near-zero ownership is usually a data error — floor it at 10–15%.
+— Run the hero-chalk scan (Rule #37) and the IL-return scan (Rule #40) every slate.
+THE CHALK-LIVE DETECTOR — Score the slate on four signals: (a) elite aces at 35%+ own in plus matchups; (b) compressed slate of small favorites; (c) the chalk stack’s individual bats are themselves low-owned; (d) the highest-ceiling stacks ARE the chalk. When ≥2 fire, mandate a chalk-anchored block of 25–30% (Rule #34). Then classify the chalk SP itself (Rule #38). Prototype: chalk_live_detector.py.
+— DETECTOR SPLIT (added v4): score the chalk ARM and the chalk STACK separately. 7/28 fired 3 of 4 signals; the chalk ace (Williams) led all SPs at 33.35 while the chalk stack (CLE) finished LAST of 18. Signal (c) not firing is the tell that the stack half is a trap while the arm half is real.
+9 — The Post-Mortem Engine (the flywheel)
+After every slate: scoreboard vs peers; what you got right; what you got wrong ranked by cost; new rules adopted (evergreen, propagated); process notes.
+— DISCARDED-SIGNAL LOG (added 7/27, enforces #46; HARDENED by #53 on 7/28): during the confirmed-lineup phase, every pre-slate thesis that gets dropped receives one line stating which mechanism died and which survived. WRITE IT DURING THE RESCAN, NOT AFTER. Four consecutive slates have now been damaged by a correctly-identified signal dying silently in this phase.
+— CROSS-ENTRY IS A FLOOR MEASUREMENT, NEVER VALIDATION (added v4). When one lineup set is entered into two contest shapes, the results are ONE observation, not two. A respectable cash rate in the wider field does not partially redeem a set that produced nothing in the shape it was built for — min-cashes measure floor, and floor is not the objective in either shape. Read the cross-entry only as a percentile reading on the portfolio. Cf. 6/16 and 7/28.
+THE DISCIPLINE — amended June 30 — Most leaks are a single, nameable allocation error. BUT a leak can be a STANDING RULE pointing the wrong way (6/30: Rule #1 deleted the winning arm). When two consecutive+ losses share a root, audit the RULES, not the allocations. Over-fitting to a past sample is itself a leak.
+— COROLLARY ADDED v4: when a post-mortem’s leading leak is a rule adopted within the previous two slates, the consolidation pass is MANDATORY before the next build, not deferred to the next review.
+10 — Standing Rules Ledger (evergreen)
+Consolidated through the July 28, 2026 post-mortem. 53 numbered, 5 folded, 48 active. Numbering is NOT resequenced — folded rules remain in place, greyed, so prior post-mortems stay readable. Every lineup set is checked against these.
+
+11 — Ledger Governance
+The portable operating model warns that a rulebook with more rules than observed slates is overfit by construction, and that a post-mortem process which only ADDS rules is a one-way ratchet. v3 flagged this at 48 rules against ~15 slates as "a live risk, not a strength." On July 28 that risk materialised and cost a $1,900 entry: Rule #45 (adopted 7/27) made a single matchup factor a hard exclusion one day after Rule #47 (adopted 7/27) established that single factors are weights. The contradiction excluded three of the slate’s five best offenses.
+CONSOLIDATION PASS EXECUTED IN v4 — the first net reduction in ledger size:
+— #1, #31, #47 and the gate clause of #45 → FOLDED INTO #50 (single-factor screens are weights, never gates). Evidence lines preserved.
+— #15 → FOLDED INTO #3 (never zero a team; #15 was the same rule with an operational detail).
+— #32 → FOLDED INTO #29 (aggregate vs individual ownership; v3 already flagged these as the same rule stated twice).
+— Net: 53 numbered, 5 folded, 48 ACTIVE. Ratio improved from 48/15 to 48/16 and, more importantly, the internal contradiction is gone.
+
+Standing governance rules:
+— Every rule carries a hit/miss record. Track which rules fire, and whether firing helped.
+— A rule that has misfired and been amended twice is RETIRED, not amended a third time.
+— Prefer fewer, stronger coverage rules to a growing thicket of allocation rules.
+— Remaining consolidation candidates at the next review: #12/#37/#38 all govern chalk-SP treatment and could collapse into one classification rule with three branches; #29/#33 both cap concentration in different domains.
+— ADDED v4: no new rule may be adopted in the same post-mortem cycle as a rule it contradicts. Before adopting, check the new rule against every rule added in the previous three post-mortems.
+— FIRST APPLICATION, 7/28: a candidate rule on cross-entering one portfolio into two contest shapes was DECLINED. The finding was real but it was confirming evidence for #44 and Section 5, which already said it. The evidence was appended to #44 and one clause added to Section 9 instead. Logging declined rules is as important as logging adopted ones — it is the only visible proof the ratchet is off.
+
+OPEN ITEMS — (1) Ownership calibration curve: #51’s multipliers rest on two slates; log projected-vs-actual every slate. (2) Entry-count question: whether small-field WTA should use max entries at all — ten lineups at 3.1 mean dead bats generated no equity on 7/28, and the same stake in three constraint-clearing lineups may be the better shape. (3) June 29 standings CSV re-pull still outstanding.
+
+Built from the WC2026 framework + May 27 / June 15 / June 16 / June 22 / June 23 / Winner Study (6/21–28) / June 29 / June 30 / Winner Pattern Study (6/30–7/5) / July 26 / July 27 / July 28 post-mortems. Ledger current through Rule #53. Outstanding: June 29 standings CSV re-pull.
+
+[TABLE 0]
+Hitters | Pts | Pitchers (SP) | Pts
+Single | +3 | Inning Pitched | +2.25
+Double | +5 | Strikeout | +2
+Triple | +8 | Win | +4
+Home Run | +10 | Earned Run Allowed | -2
+RBI / Run | +2 | Hit / Walk / HBP Against | -0.6
+Walk / HBP | +2 | Complete Game / CG SO | +2.5
+Stolen Base | +5 | 10+ K bonus | +2
+Sac Fly / Sac Hit | +1.25 | 7+ IP bonus | +1.25
+
+[TABLE 1]
+# | Rule | Why it exists
+1 | xSLG pitcher cap — SP facing opp xSLG > 0.45 capped at 15%. SUPERSEDED IN PART BY #31: a capped arm also sub-6% owned is a Chase-block leverage play, not an auto-exclusion.  [FOLDED INTO #50 — v4. Exclusionary reading retired; retained as a weighting input.] | Elder -6.5 in 45% (5/27); gate deleted Cavalli/Wrobleski/Liberatore (6/30).
+2 | Salary floor $48,500 across all lineups. | (5/27)
+3 | Never zero any team. Environment filters are WEIGHTING tools, not exclusion filters. | BAL/BOS/HOU zeroed 5/27 finished top-3.
+4 | Evergreen principles over team-specific fixes. | (5/27)
+5 | Hash-based deduplication before submission. | (5/27)
+6 | DK position sourcing from the entries file — parse COMBINED eligibility ('1B/OF') correctly. | Position errors (5/27); multi-pos parser bug dropped Ohtani/Edman/Stowers (6/30).
+7 | Ownership-balance flag — heavy single-player exposure triggers a field comparison. | (5/27)
+8 | Find the underowned premium arm with ceiling every slate. Reconcile with #1 via #31. | Cole 7%/36.6 (5/27); Mize 6.9%/39.1 (6/29); Cavalli 2.6%/45.1 MISSED via the gate (6/30); Ureña 10.3%/18.5 + Mahle 11.2%/20.5 both hit (7/27).
+9 | The dart — a confirmed cheap bat moving up the order. | (5/27)
+10 | Coors + park/weather as first-class inputs. Extended by #35/#36; qualified by #47. | (5/27)
+11 | Delay ≠ Postponement. Cap weather-risk at ~15%, monitor for official postponement only. NOW QUALIFIED BY #48: applies to FORECAST risk only. | Foster Griffin delayed-not-postponed was slate-best (6/22).
+12 | Never anchor the slate's most-owned SP; confirm field own below 30% before >20 LUs. Refined by #37/#38. | Cole 52%/3.8 (6/22); Imai 55.9%/-8.4 (7/1), 38.3%/0.45 Cavalli (7/5), Imai again 52.2%/-3.5 (7/27) — all 0% of top-100.
+13 | Single-player hitter exposure cap: 50%. Unenforceable below ~6 lineups (granularity floor). | Caminero 77% (6/22); n=3 portfolio forced 67% exposures (7/27).
+14 | On a short slate, correlate through the SP's own GAME. Diversify two-SP builds across games. | Both SPs' offenses bust = every lineup fails (6/22).
+15 | Never zero any team's BATTING stack — anti-corr bans hitters FACING the SP, not teammate bats. Every team's bats in ≥5--10 LUs.  [FOLDED INTO #3 — v4. Same rule, operational detail.] | KC Caglianone/Loftin 6--7% owned, zero exposure (6/23).
+16 | For every SP with major anti-corr impact, build a defined allocation WITHOUT that SP. | ~170 FPTS of blocked bats (6/23).
+17 | ROO ceiling is a weighting input, not an environment guarantee. Allocate across ≥4 of 5 environments. | Top pre-slate environment busted 4 straight (TB/STL/SEA/MIN).
+18 | The dart-pitcher rule: 1--2 Chase LUs on the lowest-owned viable SP from the right game. | Avila 2.1%/20.45 excluded as Tier-4 (6/23).
+19 | On a 5-game turbo, prefer 2--3-man partial stacks; full 5-mans are for 8+ game slates. | PHI 5-man 3-of-5 bust (6/23).
+20 | Split same-tier same-team stack anchors rather than rostering both everywhere. | J-Rod + Arozarena both 0 in 17 LUs each (6/23).
+21 | Stack ownership cap — target ≥3 of 5 primary bats sub-10% INDIVIDUAL own. Qualified by #32. | Large-field winners averaged single-digit stack own (Winner Study).
+22 | Mandate one sub-4%-owned top-6 ceiling bat per lineup. Recompute the dart pool AFTER the #42 transform in sharp fields. | A sub-4% 30+ bat won all 8 studied slates (Winner Study); T. White 2.1%→6.3% post-transform (7/27).
+23 | Build ≥1 full 5-stack of the cheapest viable home offense in a hitter's park. | 220--234-pt ceilings from cheap teams (Winner Study); Coors 6/30, 7/3.
+24 | Pitcher pairing = 1 anchor + 1 sub-15% K arm. Do not pair two 35%+ chalk SPs. Qualified by #33/#34/#39. | Two-35%+ pairs in 0% of winners (Winner Study) — EXCEPT thin-arm slates (#39).
+25 | Primary + 2--3-man secondary mini from a different game. | Secondary mini in 46--77% of top-100 (Winner Study); 57--72% again 6/30--7/5.
+26 | Stop optimizing to avoid zeros; audit for stack QUALITY (ceiling), not floor. VOID below ~1,000 entries per #44. | Winners ate 1--3.6 dead bats (Winner Study); 7/5 winner won with a 0-FPTS bat.
+27 | Match stack size to slate scoring, not habit. | 5-stack share 1%→86% by slate (Winner Study).
+28 | Singular-leverage-arm concentration — top-projection AND lowest-owned arm: do not trim below ~40% for diversification alone. | Mize top proj + 6.9% own; trimmed to 34.7% (6/29).
+29 | Aggregate stack ownership ≠ concentrated chalk. Check INDIVIDUAL bat ownership before fading a strong offense. | LAD 33% aggregate faded to 7.3%, bats 5--8%, co-winning stack (6/29).
+30 | Build the dart INTO the stack — force the cheapest sub-4% bat in that team's order into a defined share. | Missed Cole Young 1.4%/33, Conine 0% (6/29).
+31 | xSLG gate is a HR-risk FLAG, not a hard exclusion of low-owned arms. A capped arm ALSO sub-6% owned is a leverage arm — build a defined Chase block (10--20%). Reconciles #1 with #8.  [FOLDED INTO #50 — v4. Same principle, pitcher-screen domain.] | Cavalli 45.1/2.6%, Wrobleski 31.6/3.8%, Liberatore 27.6/1.2% capped to 0 (6/30).
+32 | Weight primary stacks by INDIVIDUAL-bat ownership, never team-aggregate. If ≥3 bats are sub-10% owned, the stack is LIVE regardless of team total. (Hard version of #29.)  [FOLDED INTO #29 — v4. Same rule stated twice; evidence preserved here.] | MIA ~90% team-owned but bats 4--11%; winning stack + 54% of top-1% (6/30). Inverse confirmed: BOS 130.4% aggregate with ZERO sub-10% bats = true trap, 0.48× lift (7/27).
+33 | Do not floor two premium anchors to the same high share. Cap any single SP at ~20% AND require the second-arm pool to include the chalk aces the field is correctly riding. | Schlittler+Joe Ryan floored 20% each = 60 LUs; both busted (6/30).
+34 | Detect the chalk-live slate. Build a defined chalk-anchored block (25--30%). Max-leverage is a bet the field is wrong — size it, do not force it. | Top-1% avg own 10.2%; MIA+CHC 85% of top-1% stacks (6/30).
+35 | Coors series persistence. A Coors game is a first-class primary environment EVERY day of the series. Build 5-mans of BOTH sides for the series duration. | MIA 253.45 (6/30); COL 244.25 (7/3), alternating sides of one series.
+36 | Bad-team Coors bats stay underowned all series. Expect 1--11% individual ownership to persist even after a blowup. | MIA bats 4--11% (6/30); COL bats 0.7--7% (7/3) after a 14-run game.
+37 | Hero-chalk fade (the Cavalli rule). When a leverage SP posts a viral score and next-start projected ownership jumps ≥5x baseline, hard-fade: cap at ≤5% and treat the fade as the leverage position. | Cavalli 2.6%/45.15 → 38.3%/0.45. Zero top-100 rostered him (7/5).
+38 | Chalk-SP classification: NARRATIVE vs STRUCTURAL. Narrative (hype/highlight/cheap price) → fade hard per #12/#37. Structural (only viable arms on a thin-SP slate) → see #39. | Imai and Cavalli (narrative) 0% of top-100; Miller/Eovaldi (structural) 93%/78% of top-100.
+39 | Thin-arm slate exception. When two SPs are clearly best on a weak slate (both 35%+ projected), roster BOTH and generate ALL differentiation through sub-10% bats. | 7/2: 73% of top-100 ran Miller+Eovaldi; winner had 8 bats under 10% (avg 7.2%).
+40 | IL-return star scan. Check confirmed lineups for top bats in their first 1--3 games back. A star under ~3% projected own is an automatic #22 dart at superstar ceiling. | Yordan Alvarez 1.96%/39 in the 7/4 winner, Altuve 1.48%/23 beside him.
+41 | SP-own-offense mandate. When any SP is rostered at structural-chalk conviction (35%+ projected, or structural under #38), a build pairing him with his own offense MUST enter the tested candidate set. BROADENED 7/27: applies to ANY gate-passing arm whose offense clears the stack screen, at any ownership. | 7/26 winner ran Miso + Vaughn/Chourio. 7/27 winner ran Thornton at 6.52% own + NYM 5-stack — the trigger as written (35%+) would not have fired.
+42 | Sharp-field ownership transform. For entry fees ≥ ~$100: transform projected ownership before any leverage math — structural chalk SP ×1.5--1.7, model-consensus mid-priced stacks ×0.5--0.6, obvious cheap value ×2--4. Recompute chalk-live signals on transformed numbers.  [AMENDED v4 — applies ABOVE ~500 entries. Below that threshold #51 governs and the HITTER multiplier INVERTS. The ~1.0x ace-SP multiplier holds at both field sizes.] | 7/26: Miso 42.3→70.5. 7/27 confirmed the direction: Imai +8.4 while Burns -10.7 and Sproat -10.0.
+43 | Full-tier SP2 candidacy. The SP2 set must include every gate-passing arm at every salary tier — never truncate to the premium tier. Price the bat-budget value of each $2K--$3K in SP savings. | 7/26: top-3 all paired the ace with a $7,400--7,500 arm; Sheehan never a candidate.
+44 | Small-field objective swap. Below ~1,000 entries: optimize for zero-dead-bat consistency plus a single spike (dk75/dk95-weighted), and VOID the 1--3-dead-bat tolerance of #26.  [AMENDED v4 — no longer advisory. Dead bats constrained by #49; the spike required by #52.] | 7/26 winner: 16-13-12-17-16-17-14-33, zero zeros, 437-entry field.  7/28 CONFIRMED BY CROSS-ENTRY: one lineup set entered into both a 334-entry WTA and a large-field GPP went 0/10 (needed top 3.6%) and 4/10 (needed ~top 20%). Same four lineups, same 10th-36th percentile band — one outcome priced by two curves.
+45 | Stack-side gate validation. Every stack must be justified by the OPPOSING pitcher's gate failure, and the validator must assert the named pitcher's team ≠ the stack's team. No stack ships against an arm that PASSES the gate on the side the stack hits from, regardless of park or ownership.  [SPLIT v4 — the validator assertion that the named opposing SP’s team ≠ the stack’s team is RETAINED. The CLEAR/BLOCK gate verdict is FOLDED INTO #50.] | 7/27: ATH stacked on Perkins' .500 vs RHH — Perkins is Oakland's own pitcher. ATH faced Tolle (.350/.290, PASS), scored 30 from five bats, 0 of top 100.
+46 | Surviving-mechanism review. When a confirmed lineup kills the primary carve (handedness flip, scratch, order change), the secondary mechanism against that same arm must be re-scored before the team is dropped. A dead primary signal is a downgrade, never an automatic zero. | 7/27: Pérez's .600 vs LHH died on a righty lineup; his NEGATIVE K-BB vs RHH survived and was discarded. NYM went 10.94× into the top 100. Also 7/26 (Murakami).
+47 | Park factor is a weighting input, not a matchup substitute. Park and weather boosts modify allocation weight for a stack that already clears the gate test; they never justify a stack on their own.  [FOLDED INTO #50 — v4. Generalised from park inputs to all single-factor screens.] | 7/27: Sutter's +34% HR and 18.1% aggregate ownership carried the ATH stack past a gate-passing arm. Extends #3 to park inputs.
+48 | Active delay ≠ forecast risk. A game in an ANNOUNCED delay at lock is capped at 3 bats in any single lineup and may not exceed one-third of portfolio stacks. #11's ~15% cap applies to forecast uncertainty only. Where lock time equals first pitch of an at-risk game, treat the game as unresolvable and size accordingly. | 7/27: CLE@CIN in active delay at the 7:10 lock, 25--30% PPD estimate; PPD'd, zeroing five bats and ~45 pts.
+49 | Dead-bat ceiling is a HARD BUILD CONSTRAINT below ~1,000 entries, not an objective term. Cap projected dead bats at ≤1 per lineup by construction; enforce the per-hitter floor at the dk25 level, not dk50 ≥ 4. Reject the lineup — do not down-weight it. | 7/28: dead-bat count predicted finish monotonically across all 334 entries (0 dead → 149.6 mean; 4 dead → 95.7). Every top-12 lineup had ≤3; ours averaged 3.1. #44 named this and the build never enforced it.
+50 | SINGLE-FACTOR SCREENS ARE WEIGHTS, NEVER GATES. The opposing-SP xSLG test RANKS stacks and arms; it never excludes one. Any team in the slate’s top 5 by projected stack median or implied total enters the candidate set regardless of screen verdict. Absorbs #1, #31, #47 and the gate clause of #45. | 7/28: blocked MIL (2nd, 107.0), LAD (4th, 92.0), SEA (5th, 81.0) while clearing STL (17th, 26.0). Winner ran SD5+SEA2; 2nd ran MIL4+LAD2. THIRD slate with this root — 6/30 (#1 deleted Cavalli/Wrobleski/Liberatore), 7/27 (#47), 7/28 (#45).
+51 | Small-field ownership COMPRESSES toward the mean — invert the #42 hitter transform. Below ~500 entries at $100+ entry: hitter chalk ×~0.5, sub-2% plays ×~3–5, ace SP ×~1.0. COROLLARY: leverage has minimal value in small fields — build the best lineup rather than buying differentiation from a crowd that is not there. | 7/28: Romy Gonzalez 53.5%→3.6% (0.07×); Kwan 0.39×; Rocchio 0.42×; DeLauter 0.46×; JRam 0.48×; Williams 1.07×; Murakami 6.84×. Winner’s cumulative ownership was 172 — the HIGHEST in the top 12.
+52 | One 25+ ceiling bat per lineup is MANDATORY in small-field winner-take-all. Every lineup carries at least one hitter whose dk95 supports 25+, sized by ownership rather than by projection. | 7/28: best hitter across ten lineups was 20.0. All five top finishers carried 23+. Field mean by spike: 20+ → 108.2, 25+ → 110.8, 30+ → 120.1.
+53 | The discarded-signal log (#46) is upgraded to a HARD FORCE-REVIEW. Any confirmed, sub-2%-owned bat with xSLG ≥ .45 that a standing rule blocks must be adjudicated IN WRITING before the build ships. No build ships with an unadjudicated blocked signal. | 7/28: the rescan surfaced Canzone (0.8% own, .47 xSLG, scored 30.00) plus Ohtani/Tucker/Freeman; #45 killed all of them silently. FOURTH consecutive slate of a correct pre-slate signal dying in the confirmed-lineup phase (7/26 Murakami, 7/27 Pérez, 7/28 Canzone).
