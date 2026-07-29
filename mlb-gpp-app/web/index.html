@@ -731,39 +731,38 @@ function renderBuildResult(out){
   const det=el('details');det.innerHTML=`<summary>All ${rep.checks.length} checks</summary>`;const dd=el('div');dd.style.marginTop='6px';
   dd.innerHTML=rep.checks.map(c=>`<div class="chk"><span class="pill ${c.passed?'p-pass':c.severity==='fail'?'p-fail':c.severity==='warn'?'p-warn':'p-info'}">${c.rule?'#'+c.rule:c.severity}</span><span><span class="tag">${c.check}</span> — ${c.reason}</span></div>`).join('');det.appendChild(dd);c3.appendChild(det);
   out.appendChild(c3);
-  // export — desktop download + mobile Share/Save + universal copy fallback
+  // export
   const gated=!rep.export_allowed||unadj>0;
   const c4=el('div','card');
   c4.appendChild(el('div','muted','Export is hard-gated: all validate() failures clear AND zero unadjudicated Rule #53 signals.'));
+  if(gated){
+    c4.appendChild(el('div','pill p-fail','EXPORT BLOCKED — clear the hard failures above (and adjudicate any Rule #53 signals), then this unlocks.'));
+    out.appendChild(c4); return;
+  }
+  const csv=exportCSV(b.lineups);
+  const dataUri='data:text/csv;charset=utf-8,'+encodeURIComponent(csv);
+  const status=el('div','muted');
   const btns=el('div','row');
-  const shb=el('button','btn primary','Save to Files (mobile)');shb.disabled=gated;
-  const eb=el('button','btn ghost','Download DK CSV');eb.disabled=gated;
-  const cp=el('button','btn ghost','Copy CSV');cp.disabled=gated;
-  const sb=el('button','btn ghost','Show CSV');sb.disabled=gated;
-  btns.append(shb,eb,cp,sb);c4.appendChild(btns);
-  const status=el('div','muted');const box=el('textarea');
-  box.style.cssText='display:none;width:100%;height:150px;background:var(--bg);border:1px solid var(--bdr2);border-radius:8px;color:var(--txt);font-family:var(--mono);font-size:11px;padding:9px;margin-top:8px';
-  box.readOnly=true;
-  const csvText=()=>exportCSV(b.lineups);
-  // Mobile-native: the Web Share API hands a real file to iOS/Android's share
-  // sheet ("Save to Files"). Falls back to opening the CSV in a new tab.
-  shb.onclick=async()=>{const t=csvText();
-    try{const file=new File([t],'dk_upload.csv',{type:'text/csv'});
-      if(navigator.canShare&&navigator.canShare({files:[file]})){
-        await navigator.share({files:[file],title:'DraftKings lineups'});
-        status.textContent='Shared — pick "Save to Files" to keep dk_upload.csv, then upload it on DraftKings.';return;}
-    }catch(e){if(e&&e.name==='AbortError'){status.textContent='Share cancelled.';return;}}
-    try{const w=window.open('data:text/csv;charset=utf-8,'+encodeURIComponent(t),'_blank');
-      if(w){status.textContent='Opened the CSV in a new tab — use your browser’s Share / Save to keep it.';return;}}catch(e){}
-    box.style.display='block';box.value=t;box.focus();box.select();
-    status.textContent='Your phone blocked file sharing — the CSV is below. Long-press, Select All, Copy, and paste into a new dk_upload.csv.';};
-  eb.onclick=()=>{const ok=download('dk_upload.csv',csvText());
-    status.textContent=ok?'Downloaded dk_upload.csv — check your Downloads folder. On mobile use "Save to Files" instead.'
-      :'Your browser blocked the download — use "Save to Files" or "Show CSV" instead.';};
-  cp.onclick=async()=>{const t=csvText();try{await navigator.clipboard.writeText(t);status.textContent='Copied to clipboard — paste into a new dk_upload.csv file.';}
-    catch(e){box.style.display='block';box.value=t;box.focus();box.select();try{document.execCommand('copy');}catch(_){}status.textContent='Selected the CSV below — copy it (Ctrl/Cmd+C, or long-press → Copy on mobile).';}};
-  sb.onclick=()=>{box.style.display='block';box.value=csvText();box.focus();box.select();
-    status.textContent='This is your DraftKings bulk-upload CSV. Copy it into a new file named dk_upload.csv and upload that on DraftKings.';};
+  // A REAL anchor the user clicks directly — most robust across browsers and
+  // sandboxes (works where a scripted download does not).
+  const a=el('a','btn primary','⬇ Download DK CSV');a.href=dataUri;a.download='dk_upload.csv';a.style.textDecoration='none';
+  a.addEventListener('click',()=>{status.textContent='If dk_upload.csv did not land in your Downloads, copy the CSV below into a new file named dk_upload.csv (or open this app from the GitHub Pages URL / the downloaded file, not the preview pane).';});
+  const shb=el('button','btn ghost','Save to Files (mobile)');
+  const cp=el('button','btn ghost','Copy CSV');
+  btns.append(a,shb,cp);c4.appendChild(btns);
+  // Always-visible CSV — the one path that works in every environment.
+  c4.appendChild(el('div','muted','Or copy this CSV into a file named dk_upload.csv:'));
+  const box=el('textarea');box.readOnly=true;box.value=csv;
+  box.style.cssText='width:100%;height:150px;background:var(--bg);border:1px solid var(--bdr2);border-radius:8px;color:var(--txt);font-family:var(--mono);font-size:11px;padding:9px';
+  box.onclick=()=>box.select();
+  shb.onclick=async()=>{try{const file=new File([csv],'dk_upload.csv',{type:'text/csv'});
+      if(navigator.canShare&&navigator.canShare({files:[file]})){await navigator.share({files:[file],title:'DraftKings lineups'});
+        status.textContent='Shared — pick "Save to Files" to keep dk_upload.csv.';return;}}
+    catch(e){if(e&&e.name==='AbortError')return;}
+    try{if(window.open(dataUri,'_blank')){status.textContent='Opened the CSV in a new tab — use Share / Save to keep it.';return;}}catch(e){}
+    box.focus();box.select();status.textContent='Sharing is blocked here — long-press the box, Select All, Copy.';};
+  cp.onclick=async()=>{try{await navigator.clipboard.writeText(csv);status.textContent='Copied — paste into a new dk_upload.csv file.';}
+    catch(e){box.focus();box.select();try{document.execCommand('copy');}catch(_){}status.textContent='Selected the CSV — press Ctrl/Cmd+C (or long-press → Copy).';}};
   c4.append(status,box);out.appendChild(c4);
 }
 
