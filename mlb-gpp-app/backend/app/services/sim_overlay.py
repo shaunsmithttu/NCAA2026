@@ -62,6 +62,14 @@ def coverage_overlay(sim_portfolio: list[list[dict]],
     }
 
 
+def apply_info_fixes(portfolio: list[list[dict]], fixes: list[dict]) -> dict:
+    """JSON-friendly wrapper: fixes = [{"out_key":[name,team,is_p], "replacement":{...}}].
+    Only the named slot changes — a surgical late-scratch fix (spec S2 #10b)."""
+    scratches = [tuple(fx["out_key"]) for fx in fixes]
+    replacements = {tuple(fx["out_key"]): fx["replacement"] for fx in fixes}
+    return info_fix(portfolio, scratches, replacements)
+
+
 def info_fix(portfolio: list[list[dict]], scratches: list[tuple],
              replacements: dict) -> dict:
     """Surgical single-slot fixes for late scratches. scratches = list of player

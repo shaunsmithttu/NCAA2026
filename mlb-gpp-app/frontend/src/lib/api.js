@@ -57,6 +57,27 @@ export const api = {
 
   parseLineups: (csv_text, players) => j('POST', '/api/lineups/parse', { csv_text, players }),
   buildSimOverlay: (payload) => j('POST', '/api/build/sim-overlay', payload),
+  infoFix: (portfolio, fixes, ctx) => j('POST', '/api/sim-overlay/info-fix', { portfolio, fixes, ctx }),
+
+  research: async (files, ownershipMap, fieldSize) => {
+    const fd = new FormData()
+    files.forEach((f) => fd.append('files', f))
+    if (ownershipMap) fd.append('ownership_json', JSON.stringify(ownershipMap))
+    if (fieldSize) fd.append('field_size', String(fieldSize))
+    const res = await fetch('/api/research/board', { method: 'POST', body: fd })
+    if (!res.ok) throw new Error(JSON.stringify((await res.json()).detail))
+    return res.json()
+  },
+
+  builds: () => j('GET', '/api/builds'),
+  parseActuals: async (file) => {
+    const fd = new FormData(); fd.append('actuals', file)
+    const res = await fetch('/api/postmortem/actuals/parse', { method: 'POST', body: fd })
+    if (!res.ok) throw new Error(await res.text())
+    return res.json()
+  },
+  simBaselineScore: (build_id, actuals) =>
+    j('POST', '/api/postmortem/sim-baseline-score', { build_id, actuals }),
 
   calibration: () => j('GET', '/api/calibration'),
   slates: () => j('GET', '/api/slates'),

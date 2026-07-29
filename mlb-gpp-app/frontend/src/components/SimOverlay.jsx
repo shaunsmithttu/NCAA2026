@@ -183,6 +183,8 @@ export default function SimOverlay({ pool, slate }) {
             </div>
           </div>
 
+          <InfoFixPanel pool={pool} slate={slate} result={result} setResult={setResult} />
+
           <DiscardedSignals slateId={slate.slate_id} onChange={setNUnadj} />
           <ValidationReport report={result.validation} />
 
@@ -197,6 +199,74 @@ export default function SimOverlay({ pool, slate }) {
           </div>
         </>
       )}
+    </div>
+  )
+}
+
+// Surgical late-scratch fixes (spec S2 #10b): swap a single rostered player for
+// a same-slot replacement from the pool. Nothing else in the lineup moves. The
+// fixed portfolio is re-validated in place.
+function InfoFixPanel({ pool, slate, result, setResult }) {
+  const [lineupIdx, setLineupIdx] = useState(0)
+  const [outKey, setOutKey] = useState('')
+  const [inKey, setInKey] = useState('')
+  const [err, setErr] = useState(null)
+
+  const lu = result.final_portfolio[lineupIdx] || []
+  const outPlayer = lu.find((p) => JSON.stringify(p.key) === outKey)
+  const inLineup = new Set(lu.map((p) => JSON.stringify(p.key)))
+  const candidates = !outPlayer ? [] : (pool?.players || []).filter((p) =>
+    p.is_pitcher === outPlayer.is_pitcher
+    && !inLineup.has(JSON.stringify(p.key))
+    && (outPlayer.slot === 'P' ? p.is_pitcher
+        : (p.positions || []).map((x) => x.toUpperCase()).includes(outPlayer.slot)))
+
+  async function apply() {
+    setErr(null)
+    try {
+      const repl = candidates.find((p) => JSON.stringify(p.key) === inKey)
+      const fixed = await api.infoFix(result.final_portfolio,
+        [{ out_key: outPlayer.key, replacement: { ...repl, slot: outPlayer.slot } }],
+        { contest_shape: slate.contest_shape, field_size: slate.field_size ? Number(slate.field_size) : null, slate_id: slate.slate_id })
+      setResult({ ...result, final_portfolio: fixed.portfolio, validation: fixed.validation })
+      setOutKey(''); setInKey('')
+    } catch (e) { setErr(e.message) }
+  }
+
+  return (
+    <div className="card space-y-3">
+      <h2 className="font-semibold">Late-scratch info fix (#10b)</h2>
+      <p className="text-sm text-slate-400">
+        A late scratch swaps a single slot — the rest of the sim allocation is untouched. Pick the scratched
+        player and a same-position replacement; the portfolio re-validates immediately.
+      </p>
+      <div className="flex items-end gap-3 flex-wrap">
+        <label className="flex flex-col gap-1">
+          <span className="text-xs uppercase tracking-wide text-slate-500">Lineup</span>
+          <select value={lineupIdx} onChange={(e) => { setLineupIdx(Number(e.target.value)); setOutKey('') }}
+            className="bg-slate-950 border border-slate-700 rounded px-2 py-1 text-sm">
+            {result.final_portfolio.map((_, i) => <option key={i} value={i}>#{i + 1}</option>)}
+          </select>
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className="text-xs uppercase tracking-wide text-slate-500">Scratch (out)</span>
+          <select value={outKey} onChange={(e) => { setOutKey(e.target.value); setInKey('') }}
+            className="bg-slate-950 border border-slate-700 rounded px-2 py-1 text-sm">
+            <option value="">— player —</option>
+            {lu.map((p, i) => <option key={i} value={JSON.stringify(p.key)}>{p.slot} {p.name} ({p.team})</option>)}
+          </select>
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className="text-xs uppercase tracking-wide text-slate-500">Replacement (in)</span>
+          <select value={inKey} onChange={(e) => setInKey(e.target.value)} disabled={!outPlayer}
+            className="bg-slate-950 border border-slate-700 rounded px-2 py-1 text-sm min-w-48">
+            <option value="">{outPlayer ? `— ${candidates.length} eligible —` : 'pick scratch first'}</option>
+            {candidates.map((p, i) => <option key={i} value={JSON.stringify(p.key)}>{p.name} ({p.team}) ${p.salary}</option>)}
+          </select>
+        </label>
+        <button className="btn-primary" disabled={!outKey || !inKey} onClick={apply}>Apply fix</button>
+      </div>
+      {err && <p className="pill-fail block whitespace-pre-wrap">{err}</p>}
     </div>
   )
 }

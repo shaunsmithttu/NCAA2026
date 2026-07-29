@@ -53,8 +53,12 @@ npm run dev          # http://localhost:5173  (proxies /api -> :8000)
 cd backend
 python -m tests.test_core            # trust layer, detector, optimizer, transforms
 python -m tests.test_integration     # DK CSV parse -> build -> export, end to end
+python -m tests.test_research        # research board against the REAL fixture CSVs
 # or: pip install pytest && python -m pytest -q
 ```
+
+`tests/fixtures/` holds the real research CSVs (ROO stacks, pitcher/hitter/team
+research, scoring pct) used to validate the parsers against live column layouts.
 
 ## The workflow (tabs mirror the spec's five subsystems)
 
@@ -62,27 +66,41 @@ python -m tests.test_integration     # DK CSV parse -> build -> export, end to e
    salary, team, game) + projections CSV. Reconciled via the **three-part key**
    `(name, team, is-pitcher)` — never name-only (the 7/28 duplicate-Jose-Fermin
    bug). Diagnostics surface unmatched players and key collisions.
-2. **Gate Analysis** — the **chalk-live detector** (4 signals, verdict, Rule #34
+2. **Pre-Research** — upload any subset of the research files (ROO stacks,
+   pitcher/hitter/team research, scoring-pct); each is **auto-detected by header**.
+   Produces the playbook's pre-slate scans: stack **edge ratio** (ceiling ÷ own),
+   **top-5 coverage** set (#50), underowned/quality **arm board** (#8, gate as
+   weight), per-hitter **opp-xSLG-by-handedness** bat board, the sub-4% **dart
+   pool** (#22/#30), **IL-return/superstar** darts (#40), **Rule #53 candidates**,
+   **environment ranking** (#10/#35), and **thin-arm** detection (#39). The board's
+   `chalk_inputs` carry **real xSLG + Opp_TT** into the Gate tab. Ingested-pool
+   ownership lights up the ownership-gated scans.
+3. **Gate Analysis** — the **chalk-live detector** (4 signals, verdict, Rule #34
    block %), the v4 **arm/stack split**, the xSLG **leverage-exception** list
    (#31/#50 — capped-but-sub-6% arms are *not* zeroed), and the individual-vs-
    aggregate **stack ownership audit** (#29). Ownership transform (#42/#51) is
    auto-selected by field size + entry fee.
-3. **Build & Export** — set **contest shape first** (the meta-rule); it selects the
+4. **Build & Export** — set **contest shape first** (the meta-rule); it selects the
    objective (p99-weighted large-field vs p75/p95 blend WTA, Rule #44). The
    optimizer enforces roster legality, salary band, max-5-hitters/team, ≥2 games,
    no hitter-vs-rostered-pitcher, dead-bat cap (#49), and ceiling-bat (#52) as
    **hard constraints**. Export is **hard-gated** on `validate()` clearing AND
    zero unadjudicated Rule #53 signals.
-3b. **Sim Overlay** — upload the sim's final portfolio (DK/sim CSV); it's mapped
+4b. **Sim Overlay** — upload the sim's final portfolio (DK/sim CSV); it's mapped
    back onto the reconciled pool and treated as the **allocation baseline**. The
    in-house optimizer never re-shapes it — only a **fixed-budget coverage overlay**
    (7–13%, swapped over the sim's lowest-projection lineups; generated or
-   uploaded) plus surgical info fixes. The **untouched baseline is stored** with
-   the build for side-by-side scoring, and export is the same hard-gated path.
-4. **Post-Mortem** — upload DK standings → field distribution, winner, actual
-   ownership. The **ownership calibration curve** persists projected-vs-actual
-   pairs every slate (the open item behind Rule #51's provisional multipliers).
-5. **Rules Ledger** — the governance layer. Toggle rules, retag
+   uploaded) plus a **late-scratch info-fix** panel (swap a single slot; the rest
+   of the allocation is untouched; re-validates in place). The **untouched
+   baseline is stored** with the build for side-by-side scoring, and export is the
+   same hard-gated path.
+5. **Post-Mortem** — upload DK standings → field distribution, winner, actual
+   ownership. **Sim-baseline scoring**: pick a sim-overlay build + upload a player
+   actuals CSV → final mean vs untouched-baseline mean + overlay delta (did the
+   overlay earn its keep, spec #12). The **ownership calibration curve** persists
+   projected-vs-actual pairs every slate (the open item behind Rule #51's
+   provisional multipliers).
+6. **Rules Ledger** — the governance layer. Toggle rules, retag
    coverage/allocation/gate, edit thresholds. Dashboard surfaces the
    rules-to-slates ratio, RETIRE candidates (2+ misfires), and **contradictions
    among enabled rules** (the exact #45-vs-#47 failure that cost 7/28).
@@ -112,7 +130,8 @@ backend/
     models.py          request models
     seed/rules_seed.json
     services/
-      ingest.py             DK/projection parse, three-part key, reconcile
+      ingest.py             DK/projection parse, three-part key, reconcile, lineup-CSV parse
+      research.py             pre-slate research board (ROO/pitcher/hitter/team/scoring parse + scans)
       chalk_live_detector.py  ported prototype (verbatim)
       chalk.py                JSON adapter + v4 arm/stack split
       ownership.py            Rule #42/#51 transform

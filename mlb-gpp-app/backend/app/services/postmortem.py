@@ -34,6 +34,25 @@ def _actual_for(player: dict, actuals: dict) -> float | None:
     return actuals.get(norm_name(player["name"]))
 
 
+def parse_actuals(content: bytes | str) -> dict:
+    """Parse a player-actuals CSV (Name/Player + Points/FPTS/DK Points [+ Team])
+    into {norm_name -> points}. Used to score final vs sim baseline (spec S2 #12)."""
+    text = content.decode("utf-8-sig", errors="replace") if isinstance(content, bytes) else content
+    out = {}
+    for r in csv.DictReader(io.StringIO(text)):
+        low = {(k or "").strip().lower(): v for k, v in r.items()}
+        name = low.get("name") or low.get("player") or low.get("players")
+        pts = (low.get("points") or low.get("fpts") or low.get("dk points")
+               or low.get("actual") or low.get("score"))
+        if not name or pts in (None, ""):
+            continue
+        try:
+            out[norm_name(name)] = float(str(pts).replace(",", "").strip())
+        except ValueError:
+            continue
+    return out
+
+
 def score_lineup(lu: list[dict], actuals: dict) -> dict:
     total, missing = 0.0, []
     per = []

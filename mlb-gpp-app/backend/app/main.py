@@ -7,18 +7,20 @@ from __future__ import annotations
 
 import json
 
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import PlainTextResponse
 
 from .config import CORS_ORIGINS
 from .db import get_conn, init_db
 from .models import (AdjudicateRequest, BuildRequest, CalibrationRequest,
-                     ChalkRequest, ExportRequest, ParseLineupsRequest,
-                     RuleUpdate, SimOverlayBuildRequest, SimOverlayRequest,
-                     SlateCreate, TransformRequest, ValidateRequest)
+                     ChalkRequest, ExportRequest, InfoFixRequest,
+                     ParseLineupsRequest, RuleUpdate, SimBaselineScoreRequest,
+                     SimOverlayBuildRequest, SimOverlayRequest, SlateCreate,
+                     TransformRequest, ValidateRequest)
 from .services import (chalk, dk_export, discarded_signals, ingest, optimizer,
-                       ownership, postmortem, rules_ledger, sim_overlay, validate)
+                       ownership, postmortem, research, rules_ledger,
+                       sim_overlay, validate)
 
 app = FastAPI(title="MLB GPP Build App", version="1.0.0")
 app.add_middleware(
@@ -79,6 +81,32 @@ def api_chalk(req: ChalkRequest) -> dict:
 @app.post("/api/ownership/transform")
 def api_transform(req: TransformRequest) -> dict:
     return ownership.apply_transform(req.players, req.field_size, req.entry_fee)
+
+
+@app.post("/api/research/board")
+async def api_research(files: list[UploadFile] = File(...),
+                       ownership_json: str = Form(None),
+                       field_size: int = Form(None)) -> dict:
+    """Pre-slate research board (spec S2 B). Upload any subset of the research
+    files (ROO stacks, pitcher/hitter/team research, scoring pct); each is
+    auto-detected by header. Optional ownership_json ({name: own%}) — from the
+    projections file — lights up the ownership-gated scans."""
+    parsed: dict[str, list] = {}
+    types_seen = {}
+    for f in files:
+        p = research.parse_any(await f.read())
+        types_seen[f.filename] = p["type"]
+        if p["type"] != "unknown":
+            parsed[p["type"]] = p["data"]
+    if not parsed:
+        raise HTTPException(400, {"message": "No research files recognized by header.",
+                                  "files": types_seen})
+    own = json.loads(ownership_json) if ownership_json else None
+    board = research.build_board(
+        roo=parsed.get("roo_stacks"), pitchers=parsed.get("pitcher_research"),
+        hitters=parsed.get("hitter_research"), teams=parsed.get("team_research"),
+        scoring=parsed.get("scoring_pct"), ownership=own, field_size=field_size)
+    return {"files": types_seen, "board": board}
 
 
 # ---------------------------------------------------------------------------
@@ -167,6 +195,18 @@ def api_parse_lineups(req: ParseLineupsRequest) -> dict:
     return ingest.parse_lineup_rows(req.csv_text, req.players)
 
 
+@app.post("/api/sim-overlay/info-fix")
+def api_info_fix(req: InfoFixRequest) -> dict:
+    """Surgical late-scratch fixes (spec S2 #10b): swap only the named slot;
+    nothing else in the lineup moves. Re-validates the fixed portfolio."""
+    result = sim_overlay.apply_info_fixes(req.portfolio, req.fixes)
+    ctx = dict(req.ctx)
+    ctx.setdefault("unadjudicated_blocked_signals",
+                   discarded_signals.count_unadjudicated(ctx.get("slate_id")))
+    result["validation"] = validate.validate_portfolio(result["portfolio"], ctx)
+    return result
+
+
 @app.post("/api/build/sim-overlay")
 def api_build_sim_overlay(req: SimOverlayBuildRequest) -> dict:
     """Sim-overlay build (spec S2 #10, #12): the sim portfolio is the allocation
@@ -220,6 +260,39 @@ def api_build_sim_overlay(req: SimOverlayBuildRequest) -> dict:
 @app.post("/api/postmortem/standings")
 async def api_standings(standings: UploadFile = File(...)) -> dict:
     return postmortem.ingest_standings(await standings.read())
+
+
+@app.get("/api/builds")
+def api_builds() -> dict:
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT id, slate_id, mode, contest_shape, n_lineups, objective, created_at "
+            "FROM builds ORDER BY id DESC").fetchall()
+    return {"builds": [dict(r) for r in rows]}
+
+
+@app.post("/api/postmortem/actuals/parse")
+async def api_parse_actuals(actuals: UploadFile = File(...)) -> dict:
+    m = postmortem.parse_actuals(await actuals.read())
+    return {"actuals": m, "n": len(m)}
+
+
+@app.post("/api/postmortem/sim-baseline-score")
+def api_sim_baseline_score(req: SimBaselineScoreRequest) -> dict:
+    """Score the final build beside the UNTOUCHED sim baseline (spec S2 #12) — the
+    only way to know whether the coverage overlay is earning its keep."""
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT lineups_json, sim_baseline_json, mode FROM builds WHERE id=?",
+            (req.build_id,)).fetchone()
+    if not row:
+        raise HTTPException(404, "build not found")
+    final = json.loads(row["lineups_json"] or "[]")
+    baseline = json.loads(row["sim_baseline_json"]) if row["sim_baseline_json"] else None
+    result = postmortem.sim_baseline_score(final, baseline, req.actuals)
+    result["mode"] = row["mode"]
+    result["has_baseline"] = baseline is not None
+    return result
 
 
 @app.post("/api/calibration")

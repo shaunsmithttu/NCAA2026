@@ -19,6 +19,9 @@ from ..db import get_conn
 # ---------------------------------------------------------------------------
 DEFAULT_PARAMS: dict[int, dict[str, Any]] = {
     2:  {"salary_floor": 48_500},
+    8:  {"arm_own_max_pct": 12.0},          # underowned premium arm scan
+    39: {"thin_arm_sp_own_pct": 35.0},      # thin-arm slate detection
+    40: {"star_own_max_pct": 3.0},          # IL-return / superstar-dart scan
     13: {"hitter_exposure_cap_pct": 50, "granularity_floor_lineups": 6},
     21: {"target_sub10_bats": 3, "sub10_threshold_pct": 10.0},
     22: {"ceiling_bat_own_max_pct": 4.0, "ceiling_bat_rank_max": 6},

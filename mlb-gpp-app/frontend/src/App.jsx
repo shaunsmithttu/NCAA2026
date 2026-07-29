@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import { api } from './lib/api.js'
 import Ingest from './components/Ingest.jsx'
+import Research from './components/Research.jsx'
 import ChalkPanel from './components/ChalkPanel.jsx'
 import BuildPanel from './components/BuildPanel.jsx'
 import SimOverlay from './components/SimOverlay.jsx'
@@ -8,15 +9,16 @@ import DiscardedSignals from './components/DiscardedSignals.jsx'
 import RulesLedger from './components/RulesLedger.jsx'
 import PostMortem from './components/PostMortem.jsx'
 
-// Tabs mirror the spec's five subsystems (A ingest -> B gates -> C build ->
-// D post-mortem -> E rules ledger). Slate context is lifted here and shared.
+// Tabs mirror the spec's subsystems (ingest -> pre-research -> gates -> build ->
+// post-mortem -> rules ledger). Slate context is lifted here and shared.
 const TABS = [
   { id: 'ingest', label: '1 · Ingest & Validate' },
-  { id: 'gates', label: '2 · Gate Analysis' },
-  { id: 'build', label: '3 · Build & Export' },
-  { id: 'simoverlay', label: '3b · Sim Overlay' },
-  { id: 'postmortem', label: '4 · Post-Mortem' },
-  { id: 'rules', label: '5 · Rules Ledger' },
+  { id: 'research', label: '2 · Pre-Research' },
+  { id: 'gates', label: '3 · Gate Analysis' },
+  { id: 'build', label: '4 · Build & Export' },
+  { id: 'simoverlay', label: '4b · Sim Overlay' },
+  { id: 'postmortem', label: '5 · Post-Mortem' },
+  { id: 'rules', label: '6 · Rules Ledger' },
 ]
 
 export default function App() {
@@ -27,6 +29,7 @@ export default function App() {
     contest_shape: '', field_size: '', entry_fee: '',
   })
   const [pool, setPool] = useState(null)        // reconciled players + diagnostics
+  const [research, setResearch] = useState(null) // pre-slate research board
   const [chalk, setChalk] = useState(null)
   const [build, setBuild] = useState(null)
 
@@ -60,7 +63,8 @@ export default function App() {
 
       <main className="max-w-6xl mx-auto px-5 py-6">
         {tab === 'ingest' && <Ingest slate={slate} pool={pool} setPool={setPool} />}
-        {tab === 'gates' && <ChalkPanel pool={pool} slate={slate} chalk={chalk} setChalk={setChalk} />}
+        {tab === 'research' && <Research pool={pool} slate={slate} research={research} setResearch={setResearch} />}
+        {tab === 'gates' && <ChalkPanel pool={pool} slate={slate} chalk={chalk} setChalk={setChalk} research={research} />}
         {tab === 'build' && (
           <BuildPanel pool={pool} slate={slate} chalk={chalk} build={build} setBuild={setBuild} />
         )}

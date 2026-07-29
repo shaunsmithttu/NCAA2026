@@ -4,12 +4,18 @@ import { api } from '../lib/api.js'
 // Spec S2 B #4: run the chalk-live detector BEFORE the optimizer. Pitcher/stack
 // rows can be auto-derived from the reconciled pool, then hand-corrected with
 // xSLG (pitcher splits) and Vegas totals/moneylines before analysis.
-export default function ChalkPanel({ pool, chalk, setChalk }) {
+export default function ChalkPanel({ pool, chalk, setChalk, research }) {
   const [pitchers, setPitchers] = useState('[]')
   const [stacks, setStacks] = useState('[]')
   const [totals, setTotals] = useState('')
   const [moneylines, setMoneylines] = useState('')
   const [err, setErr] = useState(null)
+
+  function loadFromResearch() {
+    if (!research?.chalk_inputs) return
+    setPitchers(JSON.stringify(research.chalk_inputs.pitchers, null, 1))
+    setStacks(JSON.stringify(research.chalk_inputs.stacks, null, 1))
+  }
 
   function derive() {
     if (!pool) return
@@ -47,7 +53,11 @@ export default function ChalkPanel({ pool, chalk, setChalk }) {
       <div className="card space-y-3">
         <div className="flex items-center justify-between">
           <h2 className="font-semibold">Chalk-Live Detector</h2>
-          <button className="btn-ghost" onClick={derive} disabled={!pool}>Derive rows from pool</button>
+          <div className="flex gap-2">
+            {research?.chalk_inputs &&
+              <button className="btn-ghost" onClick={loadFromResearch}>Load from research (real xSLG/OppTT)</button>}
+            <button className="btn-ghost" onClick={derive} disabled={!pool}>Derive rows from pool</button>
+          </div>
         </div>
         <p className="text-sm text-slate-400">
           Fill xSLG (opponent expected SLG from Savant splits) and Vegas numbers, then analyze.

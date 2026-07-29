@@ -88,6 +88,17 @@ class SimOverlayBuildRequest(BaseModel):
     chalk: Optional[dict[str, Any]] = None
 
 
+class InfoFixRequest(BaseModel):
+    portfolio: list[list[dict[str, Any]]]
+    fixes: list[dict[str, Any]]              # [{out_key:[name,team,is_p], replacement:{...}}]
+    ctx: dict[str, Any] = {}
+
+
+class SimBaselineScoreRequest(BaseModel):
+    build_id: int
+    actuals: dict[str, float]                # {norm_name -> points}
+
+
 class CalibrationRequest(BaseModel):
     slate_id: Optional[int] = None
     slate_date: str
