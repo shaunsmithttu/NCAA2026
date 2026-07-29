@@ -428,8 +428,15 @@ function exportCSV(portfolio){
   return lines.join('\n');
 }
 function download(name,text){
-  const b=new Blob([text],{type:'text/csv'});const u=URL.createObjectURL(b);
-  const a=document.createElement('a');a.href=u;a.download=name;a.click();URL.revokeObjectURL(u);
+  // Robust across browsers: the anchor must be in the DOM (Firefox) and the
+  // object URL must outlive the click (revoking too early cancels the download).
+  try{
+    const b=new Blob([text],{type:'text/csv'});const u=URL.createObjectURL(b);
+    const a=document.createElement('a');a.href=u;a.download=name;a.style.display='none';
+    document.body.appendChild(a);a.click();
+    setTimeout(()=>{document.body.removeChild(a);URL.revokeObjectURL(u);},1500);
+    return true;
+  }catch(e){return false;}
 }
 
 //====================================================================
@@ -725,11 +732,27 @@ function renderBuildResult(out){
   dd.innerHTML=rep.checks.map(c=>`<div class="chk"><span class="pill ${c.passed?'p-pass':c.severity==='fail'?'p-fail':c.severity==='warn'?'p-warn':'p-info'}">${c.rule?'#'+c.rule:c.severity}</span><span><span class="tag">${c.check}</span> — ${c.reason}</span></div>`).join('');det.appendChild(dd);c3.appendChild(det);
   out.appendChild(c3);
   // export
-  const c4=el('div','card');c4.style.flexDirection='row';c4.style.justifyContent='space-between';c4.style.alignItems='center';
-  c4.innerHTML='<div class="muted">Export is hard-gated: all validate() failures clear AND zero unadjudicated Rule #53 signals.</div>';
-  const eb=el('button','btn primary','Export DK CSV');eb.disabled=!rep.export_allowed||unadj>0;
-  eb.onclick=()=>download('dk_upload.csv',exportCSV(b.lineups));
-  c4.appendChild(eb);out.appendChild(c4);
+  const gated=!rep.export_allowed||unadj>0;
+  const c4=el('div','card');
+  const head=el('div','row');head.style.justifyContent='space-between';head.style.alignItems='center';head.style.width='100%';
+  head.innerHTML='<div class="muted">Export is hard-gated: all validate() failures clear AND zero unadjudicated Rule #53 signals.</div>';
+  const btns=el('div','row');
+  const eb=el('button','btn primary','Download DK CSV');eb.disabled=gated;
+  const sb=el('button','btn ghost','Show / copy CSV');sb.disabled=gated;
+  const cp=el('button','btn ghost','Copy to clipboard');cp.disabled=gated;
+  btns.append(sb,cp,eb);head.appendChild(btns);c4.appendChild(head);
+  const status=el('div','muted');const box=el('textarea');
+  box.style.cssText='display:none;width:100%;height:150px;background:var(--bg);border:1px solid var(--bdr2);border-radius:8px;color:var(--txt);font-family:var(--mono);font-size:11px;padding:9px;margin-top:8px';
+  box.readOnly=true;
+  const csvText=()=>exportCSV(b.lineups);
+  eb.onclick=()=>{const ok=download('dk_upload.csv',csvText());
+    status.textContent=ok?'Downloaded dk_upload.csv — check your Downloads folder. If nothing appeared, use "Show / copy CSV" and paste into a .csv file.'
+      :'Your browser blocked the download. Use "Show / copy CSV" below and paste it into a new .csv file, then upload that to DraftKings.';};
+  sb.onclick=()=>{box.style.display='block';box.value=csvText();box.focus();box.select();
+    status.textContent='This is your DraftKings bulk-upload CSV. Copy it, paste into a new file named dk_upload.csv, and upload that on DraftKings.';};
+  cp.onclick=async()=>{const t=csvText();try{await navigator.clipboard.writeText(t);status.textContent='Copied to clipboard — paste into a new dk_upload.csv file.';}
+    catch(e){box.style.display='block';box.value=t;box.focus();box.select();document.execCommand&&document.execCommand('copy');status.textContent='Selected the CSV below — press Ctrl/Cmd+C to copy.';}};
+  c4.append(status,box);out.appendChild(c4);
 }
 
 //---- Rules tab
