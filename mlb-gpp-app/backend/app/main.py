@@ -61,6 +61,20 @@ async def api_ingest(dk_entries: UploadFile = File(...),
     return result
 
 
+@app.post("/api/pool/from-projections")
+async def api_pool_from_projections(projections: UploadFile = File(...)) -> dict:
+    """Build a pool from a SaberSim projections file alone (it carries DFS IDs).
+    Use when no DKEntries file is available (spec prefers DKEntries for IDs)."""
+    projs = ingest.parse_projections(await projections.read())
+    if not projs:
+        raise HTTPException(400, "No rows parsed from projections file.")
+    pool = ingest.pool_from_projections(projs)
+    pool["confirmed_hitters"] = [
+        {"name": p.name, "team": p.team, "order": p.order}
+        for p in ingest.confirmed_hitters(projs)]
+    return pool
+
+
 @app.post("/api/validate")
 def api_validate(req: ValidateRequest) -> dict:
     ctx = dict(req.ctx)

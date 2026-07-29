@@ -54,18 +54,23 @@ cd backend
 python -m tests.test_core            # trust layer, detector, optimizer, transforms
 python -m tests.test_integration     # DK CSV parse -> build -> export, end to end
 python -m tests.test_research        # research board against the REAL fixture CSVs
+python -m tests.test_sabersim        # real SaberSim file -> pool -> build -> export
 # or: pip install pytest && python -m pytest -q
 ```
 
 `tests/fixtures/` holds the real research CSVs (ROO stacks, pitcher/hitter/team
-research, scoring pct) used to validate the parsers against live column layouts.
+research, scoring pct) and a real SaberSim projections export, used to validate
+the parsers and the full build/export path against live column layouts.
 
 ## The workflow (tabs mirror the spec's five subsystems)
 
 1. **Ingest & Validate** — upload DKEntries CSV (authoritative for IDs, positions,
    salary, team, game) + projections CSV. Reconciled via the **three-part key**
    `(name, team, is-pitcher)` — never name-only (the 7/28 duplicate-Jose-Fermin
-   bug). Diagnostics surface unmatched players and key collisions.
+   bug). Diagnostics surface unmatched players and key collisions. **Or build from
+   SaberSim alone** — the export carries a `DFS ID` (the DK player ID) plus combined
+   eligibility, salary, and all percentiles, so it can drive a real build and DK CSV
+   export when no DKEntries file is on hand.
 2. **Pre-Research** — upload any subset of the research files (ROO stacks,
    pitcher/hitter/team research, scoring-pct); each is **auto-detected by header**.
    Produces the playbook's pre-slate scans: stack **edge ratio** (ceiling ÷ own),

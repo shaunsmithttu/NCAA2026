@@ -207,6 +207,48 @@ def parse_projections(content: bytes | str) -> list[Projection]:
     return out
 
 
+def pool_from_projections(projections: list[Projection]) -> dict:
+    """Build a buildable pool from a SaberSim projections file ALONE.
+
+    Preferred source is DKEntries (spec S2 #3), but the SaberSim export carries a
+    'DFS ID' (the DraftKings player ID) plus combined eligibility, salary, team,
+    and all dk percentiles — enough to build and export a real DK CSV when no
+    DKEntries file is on hand. Uses the same player-dict shape as reconcile()."""
+    players, missing_id = [], []
+    for p in projections:
+        raw = p.raw or {}
+        low = {k.lower(): v for k, v in raw.items()}
+        dfs_id = (raw.get("DFS ID") or low.get("dfs id") or low.get("dk id")
+                  or low.get("id") or "").strip()
+        if not dfs_id:
+            missing_id.append(p.name)
+        positions = _parse_positions(p.pos)
+        saber_total = None
+        for k in ("Saber Total", "saber total"):
+            if k in raw or k.lower() in low:
+                try:
+                    saber_total = float(raw.get(k, low.get(k.lower())))
+                except (TypeError, ValueError):
+                    saber_total = None
+        players.append({
+            "dk_id": dfs_id, "name": p.name, "positions": positions,
+            "salary": int(p.salary) if p.salary else 0, "team": p.team, "opp": p.opp,
+            "game_info": f"{p.team}@{p.opp}" if p.team and p.opp else "",
+            "is_pitcher": p.is_pitcher, "proj": p.proj, "dk95": p.dk95, "dk99": p.dk99,
+            "dk25": p.dk25, "dk75": p.dk75, "adj_own": p.adj_own, "order": p.order,
+            "status": p.status, "saber_total": saber_total,
+            "key": list(player_key(p.name, p.team, p.is_pitcher)),
+        })
+    return {
+        "players": players, "source": "projections_only",
+        "n_players": len(players), "n_missing_dk_id": len(missing_id),
+        "missing_dk_id": missing_id[:50],
+        "warning": ("DKEntries is the authoritative ID source (spec §2.3). This pool "
+                    "was built from the SaberSim file's DFS ID column — verify combined "
+                    "eligibility and IDs against DKEntries before high-stakes submission."),
+    }
+
+
 def confirmed_hitters(projections: list[Projection]) -> list[Projection]:
     """Filter Status=='Confirmed' and Order.notna() before stack analysis (spec S5)."""
     return [p for p in projections

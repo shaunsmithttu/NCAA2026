@@ -6,6 +6,7 @@ import { api } from '../lib/api.js'
 export default function Ingest({ pool, setPool }) {
   const [dk, setDk] = useState(null)
   const [proj, setProj] = useState(null)
+  const [ssOnly, setSsOnly] = useState(null)
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState(null)
 
@@ -13,6 +14,17 @@ export default function Ingest({ pool, setPool }) {
     setBusy(true); setErr(null)
     try { setPool(await api.ingest(dk, proj)) }
     catch (e) { setErr(e.message) }
+    finally { setBusy(false) }
+  }
+
+  async function runSsOnly() {
+    setBusy(true); setErr(null)
+    try {
+      const p = await api.poolFromProjections(ssOnly)
+      // normalize to the reconciliation shape the rest of the UI expects
+      setPool({ ...p, n_dk: p.n_players, n_projections: p.n_players, n_matched: p.n_players,
+                unmatched_dk: [], projection_key_collisions: [] })
+    } catch (e) { setErr(e.message) }
     finally { setBusy(false) }
   }
 
@@ -33,6 +45,21 @@ export default function Ingest({ pool, setPool }) {
           {busy ? 'Reconciling…' : 'Ingest & reconcile'}
         </button>
         {err && <p className="pill-fail block whitespace-pre-wrap">{err}</p>}
+      </div>
+
+      <div className="card space-y-3">
+        <h2 className="font-semibold">…or build from SaberSim only</h2>
+        <p className="text-sm text-slate-400">
+          No DKEntries on hand? The SaberSim export carries a <b>DFS ID</b> (the DraftKings player ID) plus
+          combined eligibility, salary, and all percentiles — enough to build and export a real DK CSV.
+          DKEntries remains the authoritative ID source (spec §2.3); verify before high-stakes submission.
+        </p>
+        <div className="flex items-center gap-3 flex-wrap">
+          <FileInput label="SaberSim projections CSV" onChange={setSsOnly} file={ssOnly} />
+          <button className="btn-primary self-end" disabled={!ssOnly || busy} onClick={runSsOnly}>
+            {busy ? 'Building…' : 'Build pool from SaberSim'}
+          </button>
+        </div>
       </div>
 
       {pool && (

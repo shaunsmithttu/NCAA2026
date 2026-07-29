@@ -28,6 +28,14 @@ export const api = {
     return res.json()
   },
 
+  poolFromProjections: async (projFile) => {
+    const fd = new FormData()
+    fd.append('projections', projFile)
+    const res = await fetch('/api/pool/from-projections', { method: 'POST', body: fd })
+    if (!res.ok) throw new Error(JSON.stringify((await res.json()).detail))
+    return res.json()
+  },
+
   transform: (players, field_size, entry_fee) =>
     j('POST', '/api/ownership/transform', { players, field_size, entry_fee }),
 
