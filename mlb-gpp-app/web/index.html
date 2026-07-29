@@ -1,0 +1,761 @@
+<title>MLB GPP Build Terminal</title>
+<style>
+  /* Deliberate single-world "build terminal": near-black ground with a blue bias
+     toward the emerald accent. Semantic colors (good/warn/critical) are separate
+     from the accent. */
+  :root{
+    --bg:#0f1117; --panel:#161922; --panel2:#1c2030; --bdr:#2a2f45; --bdr2:#3a4468;
+    --txt:#f0f2fa; --mut:#8892b0; --dim:#5a6486;
+    --acc:#22e07a; --acc-dim:rgba(34,224,122,.14);
+    --red:#ff5572; --red-bg:rgba(255,85,114,.14);
+    --amb:#ffb340; --amb-bg:rgba(255,179,64,.14);
+    --sky:#5b9fff; --sky-bg:rgba(91,159,255,.14);
+    --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{background:var(--bg);color:var(--txt);font-family:system-ui,-apple-system,sans-serif;font-size:14px;line-height:1.45}
+  body{max-width:1180px;margin:0 auto;padding:0 18px 80px}
+  h1{font-size:18px;font-weight:700;letter-spacing:-.01em}
+  h2{font-size:15px;font-weight:650}
+  a{color:var(--sky)}
+  .mono{font-family:var(--mono);font-variant-numeric:tabular-nums}
+  header{position:sticky;top:0;z-index:20;background:rgba(15,17,23,.92);backdrop-filter:blur(8px);border-bottom:1px solid var(--bdr);margin:0 -18px;padding:12px 18px}
+  .hrow{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+  .sub{color:var(--dim);font-size:12px}
+  nav{display:flex;gap:2px;margin-top:10px;overflow-x:auto}
+  nav button{background:none;border:none;border-bottom:2px solid transparent;color:var(--mut);padding:7px 12px;font:inherit;font-size:13px;cursor:pointer;white-space:nowrap}
+  nav button.on{color:var(--acc);border-color:var(--acc)}
+  nav button:hover{color:var(--txt)}
+  .slatebar{display:flex;gap:14px;flex-wrap:wrap;align-items:flex-end;border-bottom:1px solid var(--bdr);padding:10px 0;margin:0 -18px;padding-left:18px;padding-right:18px}
+  label.f{display:flex;flex-direction:column;gap:3px}
+  label.f > span{font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--dim)}
+  input,select{background:var(--panel);border:1px solid var(--bdr2);border-radius:7px;color:var(--txt);padding:6px 9px;font:inherit}
+  input[type=file]{border:none;padding:0;font-size:13px;color:var(--mut)}
+  input[type=file]::file-selector-button{margin-right:10px;padding:6px 11px;border:0;border-radius:7px;background:var(--panel2);color:var(--txt);font:inherit;cursor:pointer}
+  input:focus,select:focus,button:focus-visible{outline:2px solid var(--acc);outline-offset:1px}
+  main{padding-top:18px}
+  section{display:none;flex-direction:column;gap:14px}
+  section.on{display:flex}
+  .card{background:var(--panel);border:1px solid var(--bdr);border-radius:12px;padding:15px;display:flex;flex-direction:column;gap:11px}
+  .card p{color:var(--mut);font-size:13px}
+  .row{display:flex;gap:11px;flex-wrap:wrap;align-items:flex-end}
+  button.btn{border:0;border-radius:8px;padding:7px 13px;font:inherit;font-size:13px;font-weight:600;cursor:pointer;transition:.12s}
+  .primary{background:var(--acc);color:#04160c}
+  .primary:disabled{opacity:.35;cursor:not-allowed}
+  .ghost{background:var(--panel2);color:var(--txt)}
+  .ghost:hover{background:var(--bdr)}
+  .pill{display:inline-block;padding:2px 8px;border-radius:6px;font-size:11px;font-weight:700;letter-spacing:.02em}
+  .p-pass{background:var(--acc-dim);color:var(--acc)}
+  .p-fail{background:var(--red-bg);color:var(--red)}
+  .p-warn{background:var(--amb-bg);color:var(--amb)}
+  .p-info{background:var(--panel2);color:var(--mut)}
+  .p-sky{background:var(--sky-bg);color:var(--sky)}
+  .grid{display:grid;gap:11px}
+  .g4{grid-template-columns:repeat(auto-fit,minmax(120px,1fr))}
+  .stat{background:var(--bg);border:1px solid var(--bdr);border-radius:9px;padding:11px}
+  .stat b{font-size:22px;font-weight:750;display:block}
+  .stat span{font-size:11px;color:var(--dim)}
+  table{width:100%;border-collapse:collapse;font-size:12px}
+  .scroll{overflow-x:auto;max-height:440px;overflow-y:auto}
+  th{text-align:left;color:var(--dim);font-weight:600;font-size:10px;text-transform:uppercase;letter-spacing:.05em;padding:0 9px 5px 0;position:sticky;top:0;background:var(--panel)}
+  td{padding:3px 9px 3px 0;border-top:1px solid var(--bdr);font-family:var(--mono);font-variant-numeric:tabular-nums}
+  .warnbox{border-color:var(--amb);background:var(--amb-bg)}
+  .err{color:var(--red);font-size:12px;white-space:pre-wrap}
+  .lu{border-top:1px solid var(--bdr);padding:5px 0;font-size:11.5px;font-family:var(--mono)}
+  .lu .slot{color:var(--dim)}
+  .lu.cov{background:var(--sky-bg);border-radius:5px;padding-left:5px}
+  details summary{cursor:pointer;color:var(--mut);font-size:12px}
+  .muted{color:var(--mut);font-size:12.5px}
+  .tag{font-family:var(--mono);color:var(--dim)}
+  .chk{display:flex;gap:8px;align-items:flex-start;font-size:12.5px;padding:2px 0}
+  footer{color:var(--dim);font-size:11px;margin-top:26px;border-top:1px solid var(--bdr);padding-top:12px}
+</style>
+
+<header>
+  <div class="hrow">
+    <div>
+      <h1>MLB GPP Build Terminal</h1>
+      <div class="sub">Rules-driven DraftKings GPP builder · runs entirely in your browser · shaunsmithttu</div>
+    </div>
+    <span id="pool-badge" class="pill p-info">no pool loaded</span>
+  </div>
+  <nav id="nav"></nav>
+</header>
+
+<div class="slatebar">
+  <label class="f"><span>Slate date</span><input type="date" id="slate-date"></label>
+  <label class="f"><span>Contest shape (set FIRST — meta-rule)</span>
+    <select id="shape">
+      <option value="">— choose —</option>
+      <option value="large_field_gpp">Large-field GPP (p99)</option>
+      <option value="small_field_wta">Small-field WTA (p75/p95)</option>
+    </select></label>
+  <label class="f"><span>Field size</span><input type="number" id="field" placeholder="20000" style="width:100px"></label>
+  <label class="f"><span>Entry fee $</span><input type="number" id="fee" placeholder="100" style="width:90px"></label>
+  <label class="f"><span># lineups</span><input type="number" id="nlu" value="20" style="width:80px"></label>
+</div>
+
+<main>
+  <section id="s-ingest" class="on"></section>
+  <section id="s-research"></section>
+  <section id="s-gate"></section>
+  <section id="s-build"></section>
+  <section id="s-rules"></section>
+</main>
+
+<footer>
+  Client-side only — your CSVs never leave the browser. DK CSV export uses the DraftKings player IDs from
+  your files. DKEntries is the authoritative ID source; the SaberSim path uses its DFS ID column.
+</footer>
+
+<script>
+//====================================================================
+// Rules as data — editable thresholds (mirrors the SQLite rules table)
+//====================================================================
+const R = {
+  salary_floor:48500, salary_cap:50000, max_hitters:5, min_games:2,
+  xslg_cap:0.45, top_n:5,
+  field42:500, field44:1000,
+  dead_dk25_floor:4.0, dead_cap:1, ceiling_min:25.0,
+  hitter_cap:50, sp_cap:20, granularity:6,
+  t42:{sp_own:20, sp_mult:1.6, cheap_sal:3600, mid_own:15, mid_mult:0.55, cheap_mult:3.0},
+  t51:{sub2:2, sub2_mult:4.0, h_own:15, h_mult:0.5, ace_mult:1.0},
+  r53:{own:2.0, xslg:0.45},
+};
+const SLOTS=["P","P","C","1B","2B","3B","SS","OF","OF","OF"];
+const HIT_SLOTS=["C","1B","2B","3B","SS","OF"];
+const PITCH_POS=new Set(["P","SP","RP"]);
+
+//====================================================================
+// State
+//====================================================================
+const S={pool:null, research:null, chalk:null, build:null, signals:[], xslgMap:{}};
+document.getElementById('slate-date').valueAsDate=new Date();
+
+//====================================================================
+// Utilities
+//====================================================================
+function parseCSV(text){
+  const rows=[]; let row=[], cell='', q=false;
+  text=text.replace(/\r/g,'');
+  for(let i=0;i<text.length;i++){
+    const c=text[i];
+    if(q){ if(c==='"'){ if(text[i+1]==='"'){cell+='"';i++;} else q=false;} else cell+=c; }
+    else if(c==='"') q=true;
+    else if(c===',') {row.push(cell);cell='';}
+    else if(c==='\n'){row.push(cell);rows.push(row);row=[];cell='';}
+    else cell+=c;
+  }
+  if(cell.length||row.length){row.push(cell);rows.push(row);}
+  return rows;
+}
+function dictRows(text){
+  const rows=parseCSV(text); if(!rows.length) return [];
+  const hdr=rows[0].map(h=>h.trim());
+  return rows.slice(1).filter(r=>r.some(x=>x&&x.trim())).map(r=>{
+    const o={}; hdr.forEach((h,i)=>o[h]=r[i]); return o;
+  });
+}
+function norm(name){
+  return (name||'').toString().trim().toLowerCase()
+    .replace(/[.'`]/g,'').replace(/\s+(jr|sr|ii|iii|iv)\.?$/,'')
+    .replace(/[^a-z0-9 ]/g,'').replace(/\s+/g,' ').trim();
+}
+const num=v=>{ if(v==null)return null; const s=String(v).replace(/[%,$]/g,'').trim();
+  if(s===''||s==='-')return null; const f=parseFloat(s); return isNaN(f)?null:f; };
+const gi=(t,o)=>t&&o?`${t}@${o}`:'';
+const gameKey=s=>{const p=(s||'').split(' ')[0]; return p.includes('@')?p.split('@').sort().join('@'):p;};
+function el(tag,cls,html){const e=document.createElement(tag);if(cls)e.className=cls;if(html!=null)e.innerHTML=html;return e;}
+
+//====================================================================
+// Parsers — SaberSim projections (has DFS ID = DK id) and DKEntries
+//====================================================================
+function parseProjections(text){
+  const out=[];
+  for(const r of dictRows(text)){
+    const low={}; for(const k in r) low[k.toLowerCase().trim()]=r[k];
+    const name=(r['Name']||low['name']||'').trim(); if(!name)continue;
+    const pos=(r['Pos']||low['pos']||'').trim();
+    const isP=PITCH_POS.has(pos.toUpperCase())||pos.toUpperCase().startsWith('P');
+    const ord=num(r['Order']!=null?r['Order']:low['order']);
+    out.push({
+      dfs_id:(r['DFS ID']||low['dfs id']||low['id']||'').toString().trim(),
+      name, pos, team:(r['Team']||low['team']||'').trim().toUpperCase(),
+      opp:(r['Opp']||low['opp']||'').trim().toUpperCase(),
+      salary:num(r['Salary']||low['salary']),
+      proj:num(low['ss proj']||low['my proj']||low['proj'])||0,
+      dk25:num(low['dk_25_percentile']), dk75:num(low['dk_75_percentile']),
+      dk95:num(low['dk_95_percentile']), dk99:num(low['dk_99_percentile']),
+      adj_own:num(low['adj own']!=null?low['adj own']:low['my own']),
+      saber_total:num(low['saber total']),
+      order:ord==null?null:Math.round(ord),
+      status:(r['Status']||low['status']||'').trim(), is_pitcher:isP,
+    });
+  }
+  return out;
+}
+function poolFromProjections(projs){
+  let miss=0;
+  const players=projs.map(p=>{
+    if(!p.dfs_id)miss++;
+    const positions=(p.pos||'').split(/[/,]/).map(x=>x.trim().toUpperCase()).filter(Boolean);
+    return {dk_id:p.dfs_id, name:p.name, positions, salary:p.salary?Math.round(p.salary):0,
+      team:p.team, opp:p.opp, game_info:gi(p.team,p.opp), is_pitcher:p.is_pitcher,
+      proj:p.proj, dk95:p.dk95, dk99:p.dk99, dk25:p.dk25, dk75:p.dk75,
+      adj_own:p.adj_own, order:p.order, status:p.status, saber_total:p.saber_total,
+      key:[norm(p.name),p.team,p.is_pitcher]};
+  });
+  return {players, source:'projections_only', n_players:players.length, n_missing:miss};
+}
+// DKEntries: pool table at row 8; Name+ID@16 Name@17 RosterPos@19 Salary@20 Game@21 Team@22
+function parseDKEntries(text){
+  const rows=parseCSV(text), out=[];
+  for(let i=8;i<rows.length;i++){
+    const r=rows[i]; if(!r||r.length<=22)continue;
+    const nm=(r[17]||'').trim(); if(!nm)continue;
+    const m=(r[16]||'').match(/^(.*?)\s*\((\d+)\)\s*$/);
+    const id=m?m[2]:(r[18]||'').trim();
+    const positions=(r[19]||'').split(/[/,]/).map(x=>x.trim().toUpperCase()).filter(Boolean);
+    const isP=positions.some(p=>PITCH_POS.has(p));
+    const g=(r[21]||''), gm=g.match(/\b([A-Z]{2,3})@([A-Z]{2,3})\b/);
+    const team=(r[22]||'').trim().toUpperCase();
+    let opp=''; if(gm)opp=team===gm[1]?gm[2]:(team===gm[2]?gm[1]:'');
+    out.push({dk_id:id, name:nm, positions, salary:parseInt((r[20]||'0').replace(/[^\d]/g,''))||0,
+      team, opp, game_info:g, is_pitcher:isP, key:[norm(nm),team,isP]});
+  }
+  return out;
+}
+function reconcile(dk, projs){
+  const pByKey={}, coll=[];
+  for(const p of projs){const k=[norm(p.name),p.team,p.is_pitcher].join('|');
+    if(pByKey[k])coll.push(p.name); pByKey[k]=p;}
+  const players=[], unDK=[]; const used=new Set();
+  for(const d of dk){
+    const k=[norm(d.name),d.team,d.is_pitcher].join('|'); const pr=pByKey[k];
+    if(!pr){unDK.push(d.name);continue;} used.add(k);
+    players.push({...d, proj:pr.proj, dk95:pr.dk95, dk99:pr.dk99, dk25:pr.dk25, dk75:pr.dk75,
+      adj_own:pr.adj_own, order:pr.order, status:pr.status, saber_total:pr.saber_total});
+  }
+  return {players, source:'reconciled', n_players:players.length, n_dk:dk.length,
+    n_projections:projs.length, n_matched:players.length, unmatched_dk:unDK,
+    collisions:coll, n_missing:0};
+}
+
+//====================================================================
+// Ownership transform (#42 / #51)
+//====================================================================
+function selectTransform(field,fee){
+  if(field==null||fee==null||fee<100)return 'none';
+  return field>=R.field42?'rule_42':'rule_51';
+}
+function applyTransform(players,field,fee){
+  const which=selectTransform(field,fee);
+  return players.map(p=>{
+    const base=p.adj_own||0; let mult=1, cat='untransformed';
+    if(which==='rule_42'){
+      if(p.is_pitcher){ if(base>=R.t42.sp_own){mult=R.t42.sp_mult;cat='structural_chalk_sp';} else cat='sp_neutral';}
+      else if((p.salary||9e9)<=R.t42.cheap_sal){mult=R.t42.cheap_mult;cat='cheap_value';}
+      else if(base>=R.t42.mid_own){mult=R.t42.mid_mult;cat='mid_priced_chalk';}
+      else cat='neutral';
+    } else if(which==='rule_51'){
+      if(p.is_pitcher){mult=R.t51.ace_mult;cat='ace_sp';}
+      else if(base<R.t51.sub2){mult=R.t51.sub2_mult;cat='sub2_tail';}
+      else if(base>=R.t51.h_own){mult=R.t51.h_mult;cat='hitter_chalk';}
+      else cat='neutral';
+    }
+    return {...p, own_base:base, own_mult:mult, own_category:cat, own_transformed:+(base*mult).toFixed(2)};
+  });
+}
+
+//====================================================================
+// Optimizer — multi-start randomized greedy + local search (browser)
+//====================================================================
+function luValue(p,shape){
+  if(shape==='small_field_wta'){
+    if(p.dk75!=null&&p.dk95!=null)return .5*p.dk75+.5*p.dk95;
+    return p.dk95!=null?p.dk95:p.proj||0;
+  }
+  return p.dk99!=null?p.dk99:(p.dk95!=null?p.dk95:p.proj||0);
+}
+function eligSlots(p){ return p.is_pitcher?["P"]:HIT_SLOTS.filter(s=>p.positions.includes(s)); }
+function pickWeighted(cands){ // weight by value, favor top
+  const top=cands.slice(0,Math.min(8,cands.length));
+  const tot=top.reduce((a,c)=>a+Math.max(.1,c._v),0); let x=Math.random()*tot;
+  for(const c of top){ x-=Math.max(.1,c._v); if(x<=0)return c; }
+  return top[0];
+}
+function buildPortfolio(pool, shape, n, field){
+  const enforceDead=field!=null&&field<R.field44;
+  const enforceCeil=shape==='small_field_wta';
+  const valid=pool.filter(p=>p.salary>0&&eligSlots(p).length);
+  valid.forEach(p=>p._v=luValue(p,shape));
+  const minP=Math.min(...valid.filter(p=>p.is_pitcher).map(p=>p.salary));
+  const minH=Math.min(...valid.filter(p=>!p.is_pitcher).map(p=>p.salary));
+  const slotMin=SLOTS.map(s=>s==='P'?minP:minH);
+  // Exposure caps are unenforceable below the granularity floor (~6 lineups) —
+  // don't over-constrain tiny WTA portfolios by construction (matches spec §4).
+  const capOn=n>=R.granularity;
+  // floor, not ceil: ceil(0.5*15)=8 -> 8/15=53% would exceed the 50% cap that
+  // validate() then enforces. floor keeps construction within the stated cap.
+  const hitterCap=capOn?Math.floor(R.hitter_cap/100*n):Infinity;
+  const spCap=capOn?Math.floor(R.sp_cap/100*n):Infinity;
+  const use={}, seen=new Set(), lineups=[]; const fired={44:`objective: ${shape}`};
+
+  function tryBuild(){
+    const chosen=[], byId=new Set(), teamHit={}, pitTeams=new Set(), games=new Set();
+    let salary=0, dead=0, hasCeil=false;
+    for(let si=0;si<SLOTS.length;si++){
+      const slot=SLOTS[si];
+      const remainMin=slotMin.slice(si+1).reduce((a,b)=>a+b,0);
+      const maxSpend=R.salary_cap-salary-remainMin;
+      let cands=valid.filter(p=>{
+        if(byId.has(p.dk_id))return false;
+        if(use[p.dk_id]>= (p.is_pitcher?spCap:hitterCap))return false;
+        if(!eligSlots(p).includes(slot))return false;
+        if(p.salary>maxSpend)return false;
+        if(p.is_pitcher){ /* pitcher: no rostered hitter he faces */
+          for(const h of chosen){ if(!h.is_pitcher&&h.opp===p.team)return false; }
+        } else {
+          if((teamHit[p.team]||0)>=R.max_hitters)return false;
+          if(pitTeams.has(p.opp))return false; // faces rostered pitcher
+          if(enforceDead&&p.dk25!=null&&p.dk25<R.dead_dk25_floor&&dead>=R.dead_cap)return false;
+        }
+        return true;
+      });
+      if(!cands.length)return null;
+      // WTA: if last hitter chance and no ceiling bat yet, force one
+      if(enforceCeil&&!hasCeil&&!SLOTS.slice(si+1).some(x=>x!=='P')&&slot!=='P'){
+        const c2=cands.filter(p=>(p.dk95||0)>=R.ceiling_min); if(c2.length)cands=c2;
+      }
+      cands.sort((a,b)=>b._v-a._v);
+      const pick=pickWeighted(cands);
+      chosen.push(pick); byId.add(pick.dk_id); salary+=pick.salary;
+      games.add(gameKey(pick.game_info));
+      if(pick.is_pitcher)pitTeams.add(pick.team);
+      else{ teamHit[pick.team]=(teamHit[pick.team]||0)+1;
+        if(pick.dk25!=null&&pick.dk25<R.dead_dk25_floor)dead++;
+        if((pick.dk95||0)>=R.ceiling_min)hasCeil=true; }
+    }
+    if(salary<R.salary_floor)return null;
+    if(games.size<R.min_games)return null;
+    if(enforceCeil&&!hasCeil)return null;
+    return {players:chosen.map((p,i)=>({...p,slot:SLOTS[i]})), salary, value:chosen.reduce((a,p)=>a+p._v,0)};
+  }
+
+  for(let i=0;i<n;i++){
+    let best=null;
+    for(let s=0;s<60;s++){
+      const lu=tryBuild(); if(!lu)continue;
+      const h=lu.players.map(p=>p.dk_id).sort().join('|');
+      if(seen.has(h))continue;
+      if(!best||lu.value>best.value){best=lu;best._h=h;}
+    }
+    if(!best)break;
+    seen.add(best._h); lineups.push(best.players);
+    best.players.forEach(p=>use[p.dk_id]=(use[p.dk_id]||0)+1);
+  }
+  if(enforceDead)fired[49]='dead-bat cap enforced';
+  if(enforceCeil)fired[52]='ceiling-bat required';
+  if(capOn)Object.assign(fired,{13:'hitter exposure cap',33:'SP exposure cap'});
+  return {lineups, n_built:lineups.length, n_requested:n,
+    objective:shape==='small_field_wta'?'p75_p95_blend':'p99_weighted', fired_rules:fired};
+}
+
+//====================================================================
+// validate() — the export hard gate
+//====================================================================
+function validate(portfolio, ctx){
+  const checks=[], C=(name,pass,reason,sev='fail',rule)=>checks.push({check:name,passed:pass,severity:sev,reason,rule});
+  const shape=ctx.shape, field=ctx.field;
+  const hit=lu=>lu.filter(p=>!p.is_pitcher), pit=lu=>lu.filter(p=>p.is_pitcher);
+  // portfolio
+  const hashes=portfolio.map(lu=>lu.map(p=>p.dk_id).sort().join('|'));
+  const dupes=hashes.filter((h,i)=>hashes.indexOf(h)!==i);
+  C('hash_dedup',!dupes.length,dupes.length?`${dupes.length} duplicate lineup(s)`:`${portfolio.length} unique lineups`,'fail',5);
+  // top-5 coverage
+  if(ctx.top5&&ctx.top5.length){
+    const exp={}; portfolio.forEach(lu=>[...new Set(hit(lu).map(p=>p.team))].forEach(t=>exp[t]=(exp[t]||0)+1));
+    const cov=ctx.top5.filter(t=>exp[t]>0), zero=ctx.top5.filter(t=>!exp[t]);
+    C('top5_coverage',cov.length>=1,`Top-5 ${JSON.stringify(ctx.top5)}: covered ${JSON.stringify(cov)}, zero ${JSON.stringify(zero)}`,'fail',50);
+  } else C('top5_coverage',true,'No team ranking supplied (upload research for #50).','warn',50);
+  // exposure
+  const n=portfolio.length;
+  if(n<R.granularity)C('exposure_caps',true,`${n} lineups — below granularity floor (${R.granularity}); caps not enforced.`,'info',13);
+  else{
+    const hc={},sc={}; portfolio.forEach(lu=>{hit(lu).forEach(p=>hc[p.dk_id]=(hc[p.dk_id]||0)+1);pit(lu).forEach(p=>sc[p.dk_id]=(sc[p.dk_id]||0)+1);});
+    const hoverr=Object.entries(hc).filter(([,c])=>c/n>R.hitter_cap/100), soverr=Object.entries(sc).filter(([,c])=>c/n>R.sp_cap/100);
+    C('hitter_exposure',!hoverr.length,hoverr.length?`${hoverr.length} hitter(s) over ${R.hitter_cap}%`:'All hitters within cap','fail',13);
+    C('sp_exposure',!soverr.length,soverr.length?`${soverr.length} SP over ~${R.sp_cap}%`:'All SPs within cap','fail',33);
+  }
+  C('blocked_signal',(ctx.unadj||0)===0,ctx.unadj?`${ctx.unadj} unadjudicated Rule #53 signal(s) — adjudicate before export.`:'No unadjudicated blocked signals','fail',53);
+  // per lineup
+  portfolio.forEach((lu,i)=>{
+    const sal=lu.reduce((a,p)=>a+(p.salary||0),0);
+    C(`salary[L${i}]`,sal<=R.salary_cap&&sal>=R.salary_floor,`$${sal} (floor ${R.salary_floor}, cap ${R.salary_cap})`,'fail',2);
+    const tc={}; hit(lu).forEach(p=>tc[p.team]=(tc[p.team]||0)+1);
+    const over=Object.entries(tc).filter(([,c])=>c>R.max_hitters);
+    C(`max_hitters[L${i}]`,!over.length,over.length?`>5 from ${over.map(x=>x[0])}`:`max ${Math.max(0,...Object.values(tc))} per team`,'fail');
+    const g=new Set(lu.map(p=>gameKey(p.game_info)));
+    C(`games[L${i}]`,g.size>=R.min_games,`spans ${g.size} game(s)`,'fail');
+    const pt=new Set(pit(lu).map(p=>p.team)); const clash=hit(lu).filter(h=>pt.has(h.opp)).map(h=>h.name);
+    C(`neg_corr[L${i}]`,!clash.length,clash.length?`hitter vs rostered P: ${clash}`:'no hitter faces rostered P','fail');
+    if(field!=null&&field<R.field44){
+      const miss=hit(lu).filter(h=>h.dk25==null).map(h=>h.name);
+      if(miss.length)C(`dead_bat[L${i}]`,false,`dk25 missing: ${miss.length} bat(s)`,'warn',49);
+      else{const d=hit(lu).filter(h=>(h.dk25||0)<R.dead_dk25_floor).length;
+        C(`dead_bat[L${i}]`,d<=R.dead_cap,`${d} dead bat(s) (cap ${R.dead_cap})`,'fail',49);}
+    }
+    if(shape==='small_field_wta'){
+      const dk=hit(lu).map(h=>h.dk95).filter(x=>x!=null); const top=dk.length?Math.max(...dk):0;
+      C(`ceiling_bat[L${i}]`,top>=R.ceiling_min,`highest dk95 ${top.toFixed(1)} (need ≥${R.ceiling_min})`,'fail',52);
+    }
+  });
+  const fails=checks.filter(c=>c.severity==='fail'&&!c.passed);
+  const warns=checks.filter(c=>c.severity==='warn'&&!c.passed);
+  return {passed:!fails.length, export_allowed:!fails.length, n_fail:fails.length, n_warn:warns.length, checks, failures:fails, warnings:warns};
+}
+
+//====================================================================
+// DK CSV export
+//====================================================================
+function exportCSV(portfolio){
+  // Lineups already carry their players in SLOTS order (P,P,C,1B,2B,3B,SS,OF,OF,OF)
+  // from buildPortfolio, so the row maps 1:1 to the DK header.
+  const lines=[SLOTS.join(',')];
+  portfolio.forEach(lu=>{
+    lines.push(lu.map(p=>p.dk_id?`${p.name} (${p.dk_id})`:p.name).join(','));
+  });
+  return lines.join('\n');
+}
+function download(name,text){
+  const b=new Blob([text],{type:'text/csv'});const u=URL.createObjectURL(b);
+  const a=document.createElement('a');a.href=u;a.download=name;a.click();URL.revokeObjectURL(u);
+}
+
+//====================================================================
+// Research board (the 5 research files)
+//====================================================================
+function detectType(hdr){
+  const h=new Set(hdr.map(c=>c.trim().toLowerCase()));
+  const has=(...k)=>k.every(x=>h.has(x));
+  if(has('b1','b2','ceiling','own'))return 'roo';
+  if(has('names','oppsp','avgscore','teamownpct'))return 'scoring';
+  if(has('team','opp_sp','xslg','opp_hand')&&!h.has('order')&&!h.has('player'))return 'team';
+  if(has('player','order','bats','xslg'))return 'hitter';
+  if(has('opp_tt','xslg','k%'))return 'pitcher';
+  return 'unknown';
+}
+function buildResearch(files, ownMap){
+  const own=k=>ownMap?ownMap[norm(k)]:null;
+  const b={roo:[],pitcher:[],hitter:[],team:[],scoring:[]};
+  for(const {type,rows} of files) if(b[type])b[type]=rows;
+  // ROO stacks
+  const stacks=b.roo.map(r=>{const label=(r['Player']||'').trim();const own_=num(r['Own']);const ceil=num(r['Ceiling']);
+    return {label, team:label.split(' ')[0]||'', bats:['B1','B2','B3','B4','B5'].map(x=>(r[x]||'').trim()).filter(Boolean),
+      median:num(r['Median']), ceiling:ceil, own:own_, top5:num(r['Top_5_finish']),
+      edge:ceil&&own_?+(ceil/own_).toFixed(3):null};}).filter(s=>s.ceiling);
+  stacks.sort((a,b)=>(b.edge||0)-(a.edge||0));
+  const byMed=[...stacks].sort((a,b)=>(b.median||0)-(a.median||0)).map(s=>s.team);
+  const byCeil=[...stacks].sort((a,b)=>(b.ceiling||0)-(a.ceiling||0)).map(s=>s.team);
+  const top5=[]; for(const t of [...byMed.slice(0,R.top_n),...byCeil.slice(0,R.top_n)])if(t&&!top5.includes(t))top5.push(t);
+  // pitchers
+  const arms=b.pitcher.map(r=>({name:(r['Names']||'').trim(),team:(r['Team']||'').trim(),dk_salary:num(r['DK_Salary']),
+    opp_tt:num(r['Opp_TT']),hand:(r['Hand']||'').trim(),k_pct:num(r['K%']),xslg:num(r['xSLG']),proj_own:own(r['Names'])}));
+  arms.forEach(a=>a._s=(a.k_pct||0)*100-((a.xslg||.4)*40)-((a.opp_tt||0)*5));
+  arms.sort((a,b)=>b._s-a._s);
+  // hitters + #53 candidates
+  const bats=b.hitter.map(r=>({name:(r['Player']||'').trim(),team:(r['Team']||'').trim(),opp_sp:(r['Opp_SP']||'').trim(),
+    opp_hand:(r['Opp_Hand']||'').trim(),order:num(r['Order']),bats:(r['bats']||'').trim(),xslg:num(r['xSLG']),
+    xhrs:num(r['xHRs']),proj_own:own(r['Player'])}));
+  bats.forEach(h=>h.good=(h.xslg||0)>=R.xslg_cap);
+  bats.sort((a,b)=>(b.xslg||0)-(a.xslg||0));
+  const xslgMap={}; bats.forEach(h=>xslgMap[norm(h.name)]=h.xslg);
+  const disc=bats.filter(h=>h.good&&h.proj_own!=null&&h.proj_own<R.r53.own).map(h=>({name:h.name,team:h.team,proj_own:h.proj_own,xslg:h.xslg,opp_hand:h.opp_hand}));
+  const dart=bats.filter(h=>(h.order||99)<=6&&(h.xslg||0)>=R.xslg_cap&&(h.proj_own==null||h.proj_own<4)).slice(0,15);
+  const star=ownMap?bats.filter(h=>h.proj_own!=null&&h.proj_own<3&&(h.xhrs||0)>=8):[];
+  // environments
+  const env={}; b.scoring.forEach(r=>{const t=(r['names']||'').trim();env[t]=env[t]||{};env[t].avg=num(r['avgScore']);env[t].opp_sp=(r['oppSP']||'').trim();});
+  b.team.forEach(r=>{const t=(r['Team']||'').trim();env[t]=env[t]||{};env[t].oppxslg=num(r['xSLG']);});
+  const environments=Object.entries(env).map(([team,v])=>({team,...v})).sort((a,b)=>((b.avg||0)+(b.oppxslg||0)*5)-((a.avg||0)+(a.oppxslg||0)*5));
+  // thin arm
+  let thin=null; if(ownMap){const c=arms.filter(a=>(a.proj_own||0)>=35);thin={triggered:c.length>=2&&c.length<=3,sps:c};}
+  // chalk feed
+  const chalk_pitchers=arms.map(a=>({name:a.name,team:a.team,salary:a.dk_salary||0,proj_own:a.proj_own||0,xslg:a.xslg||0,k_pct:a.k_pct||0,opp_team_total:a.opp_tt||0}));
+  const chalk_stacks=stacks.map(s=>{let bo=s.bats.map(x=>own(x)).filter(x=>x!=null);if(!bo.length&&s.own)bo=s.bats.map(()=>+(s.own/Math.max(1,s.bats.length)).toFixed(1));return {team:s.team,bat_owns:bo,ceiling:s.ceiling||0};});
+  return {stacks, top5:top5.slice(0,R.top_n), arms, bats:bats.slice(0,60), dart, star, disc,
+    environments, thin, xslgMap, chalk_inputs:{pitchers:chalk_pitchers,stacks:chalk_stacks},
+    counts:{roo:stacks.length,arms:arms.length,bats:bats.length}};
+}
+
+//====================================================================
+// Chalk-live detector (ported logic)
+//====================================================================
+function chalkDetect(pitchers, stacks, totals, favs){
+  const A=pitchers.filter(p=>p.proj_own>=35&&p.opp_team_total<=3.6);
+  const big=totals.filter(t=>t>=9.5), sf=favs.filter(m=>m<=-170);
+  const compressed=big.length<=2&&sf.length<=2;
+  const distributed=stacks.filter(s=>{const agg=s.bat_owns.reduce((a,b)=>a+b,0);const n10=s.bat_owns.filter(o=>o<10).length;return agg>=60&&n10>=3;});
+  let parity=false,topC=[]; if(stacks.length){const t=[...stacks].sort((a,b)=>b.ceiling-a.ceiling).slice(0,3);topC=t.filter(s=>s.bat_owns.reduce((a,b)=>a+b,0)>=50);parity=topC.length>=2;}
+  const sig={A_elite_chalk_aces_in_plus_spots:{fired:A.length>=1,detail:A.map(p=>p.name)},
+    B_compressed_small_favorite_slate:{fired:compressed,detail:{big:big.length,favs:sf.length}},
+    C_distributed_chalk_stack:{fired:distributed.length>=1,detail:distributed.map(s=>s.team)},
+    D_chalk_owns_the_ceiling:{fired:parity,detail:topC.map(s=>s.team)}};
+  const score=Object.values(sig).filter(v=>v.fired).length;
+  let verdict,block; if(score>=3){verdict='CHALK-LIVE (strong)';block='30%';}
+  else if(score===2){verdict='CHALK-LIVE (moderate)';block='25%';}
+  else if(score===1){verdict='MIXED — lean leverage, small chalk anchor';block='15%';}
+  else{verdict='LEVERAGE SLATE — winner-study defaults';block='0-10%';}
+  const hard=[],lev=[]; pitchers.forEach(p=>{if(p.xslg>R.xslg_cap){(p.proj_own<6?lev:hard).push(p);}});
+  const audit=stacks.map(s=>{const agg=+s.bat_owns.reduce((a,b)=>a+b,0).toFixed(1);const n10=s.bat_owns.filter(o=>o<10).length;
+    const v=(agg>=60&&n10>=3)?'LIVE (do not fade — #29)':(agg>=60?'concentrated chalk (fade OK)':'normal');
+    return {team:s.team,agg,n10,ceiling:+(s.ceiling||0).toFixed(1),verdict:v};}).sort((a,b)=>b.ceiling-a.ceiling);
+  const c=sig.C_distributed_chalk_stack.fired,d=sig.D_chalk_owns_the_ceiling.fired;
+  const split={arm_live:sig.A_elite_chalk_aces_in_plus_spots.fired,stack_live:c,stack_trap:d&&!c};
+  return {signals:sig,score,verdict,block,split,hard,lev,audit};
+}
+
+//====================================================================
+// Rendering
+//====================================================================
+const TABS=[['ingest','1 · Ingest'],['research','2 · Pre-Research'],['gate','3 · Gate'],['build','4 · Build & Export'],['rules','5 · Rules']];
+function setTab(id){document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('on',b.dataset.t===id));
+  document.querySelectorAll('section').forEach(s=>s.classList.toggle('on',s.id==='s-'+id));}
+const nav=document.getElementById('nav');
+TABS.forEach(([id,label])=>{const b=el('button',null,label);b.dataset.t=id;b.onclick=()=>setTab(id);nav.appendChild(b);});
+setTab('ingest');
+
+function slateCtx(){return {shape:document.getElementById('shape').value,
+  field:num(document.getElementById('field').value), fee:num(document.getElementById('fee').value),
+  n:num(document.getElementById('nlu').value)||20};}
+function poolBadge(){const b=document.getElementById('pool-badge');
+  if(S.pool){b.className='pill p-pass';b.textContent=`${S.pool.n_players} players loaded`;}
+  else{b.className='pill p-info';b.textContent='no pool loaded';}}
+
+function readFile(inp){return inp.files[0]?inp.files[0].text():Promise.resolve(null);}
+
+//---- Ingest tab
+function renderIngest(){
+  const s=document.getElementById('s-ingest'); s.innerHTML='';
+  const c1=el('div','card');
+  c1.innerHTML=`<h2>Build from SaberSim projections</h2>
+    <p>The SaberSim export carries a <b>DFS ID</b> (the DraftKings player ID) plus combined eligibility, salary,
+    and all percentiles — enough to build and export a real DK CSV. Optionally add a DKEntries file to reconcile
+    on the three-part key (name, team, is-pitcher) and use DK as the authoritative ID source.</p>`;
+  const grid=el('div','grid g4');
+  const ss=el('label','f'); ss.innerHTML='<span>SaberSim CSV (required)</span>'; const ssI=el('input');ssI.type='file';ssI.accept='.csv';ss.appendChild(ssI);
+  const dk=el('label','f'); dk.innerHTML='<span>DKEntries CSV (optional)</span>'; const dkI=el('input');dkI.type='file';dkI.accept='.csv';dk.appendChild(dkI);
+  grid.append(ss,dk); c1.appendChild(grid);
+  const btn=el('button','btn primary','Build pool'); const err=el('div','err');
+  btn.onclick=async()=>{err.textContent='';
+    try{const st=await readFile(ssI); if(!st){err.textContent='Select a SaberSim CSV first.';return;}
+      const projs=parseProjections(st);
+      const dkt=await readFile(dkI);
+      S.pool = dkt ? reconcile(parseDKEntries(dkt),projs) : poolFromProjections(projs);
+      poolBadge(); renderIngest(); renderBuild();
+    }catch(e){err.textContent=e.message;}
+  };
+  c1.append(btn,err); s.appendChild(c1);
+
+  if(S.pool){
+    const c2=el('div','card');
+    const st=S.pool;
+    c2.innerHTML=`<h2>Pool</h2>`;
+    const g=el('div','grid g4');
+    const stat=(v,l,acc)=>{const d=el('div','stat');d.innerHTML=`<b style="${acc?'color:var(--acc)':''}">${v??'—'}</b><span>${l}</span>`;return d;};
+    g.append(stat(st.n_players,'players'),
+      stat(st.source==='reconciled'?st.n_matched:st.n_players,'matched',true),
+      stat(st.source==='reconciled'?st.unmatched_dk.length:st.n_missing, st.source==='reconciled'?'unmatched DK':'missing DK id'),
+      stat(st.players.filter(p=>p.is_pitcher).length,'pitchers'));
+    c2.appendChild(g);
+    if(st.source==='projections_only'&&st.n_missing) c2.appendChild(el('div','pill p-warn',`${st.n_missing} players missing a DFS ID — they can't be exported.`));
+    if(st.collisions&&st.collisions.length) c2.appendChild(el('div','pill p-warn',`${st.collisions.length} projection key collisions.`));
+    const det=el('details'); det.innerHTML=`<summary>Player pool (${st.players.length})</summary>`;
+    const sc=el('div','scroll'); const t=el('table');
+    t.innerHTML='<thead><tr><th>Name</th><th>Pos</th><th>Tm</th><th>Sal</th><th>Proj</th><th>dk95</th><th>Own%</th><th>Ord</th></tr></thead>';
+    const tb=el('tbody');
+    st.players.slice().sort((a,b)=>(b.proj||0)-(a.proj||0)).forEach(p=>{const tr=el('tr');
+      tr.innerHTML=`<td>${p.name}</td><td>${p.positions.join('/')}</td><td>${p.team}</td><td>${p.salary}</td><td>${(p.proj||0).toFixed(1)}</td><td>${p.dk95??'—'}</td><td>${p.adj_own!=null?p.adj_own.toFixed(1):'—'}</td><td>${p.order??'—'}</td>`;tb.appendChild(tr);});
+    t.appendChild(tb); sc.appendChild(t); det.appendChild(sc); c2.appendChild(det);
+    s.appendChild(c2);
+  }
+}
+
+//---- Research tab
+function renderResearch(){
+  const s=document.getElementById('s-research'); s.innerHTML='';
+  const c=el('div','card');
+  c.innerHTML=`<h2>Pre-slate research board</h2>
+    <p>Upload any subset of the research files (ROO stacks, pitcher/hitter/team research, scoring pct) — each is
+    auto-detected by header. If a pool is loaded, its projected ownership lights up the sub-2% (#53), dart (#22),
+    IL-return (#40) and thin-arm (#39) scans.</p>`;
+  const inp=el('input');inp.type='file';inp.accept='.csv';inp.multiple=true; c.appendChild(inp);
+  const btn=el('button','btn primary','Build research board'); const err=el('div','err');
+  btn.onclick=async()=>{err.textContent='';try{
+    const files=[]; for(const f of inp.files){const txt=await f.text();const rows=dictRows(txt);const hdr=parseCSV(txt)[0]||[];files.push({type:detectType(hdr),rows});}
+    if(!files.some(f=>f.type!=='unknown')){err.textContent='No research files recognized by header.';return;}
+    let ownMap=null; if(S.pool){ownMap={};S.pool.players.forEach(p=>{if(p.adj_own!=null)ownMap[norm(p.name)]=p.adj_own;});}
+    S.research=buildResearch(files,ownMap); S.xslgMap=S.research.xslgMap; renderResearch();
+  }catch(e){err.textContent=e.message;}};
+  c.append(btn,err); s.appendChild(c);
+  const b=S.research; if(!b)return;
+  // top5 + chalk feed
+  const c0=el('div','card');
+  c0.innerHTML=`<h2>Top-5 coverage set (#50)</h2>`;
+  const chips=el('div','row'); b.top5.forEach(t=>chips.appendChild(el('span','pill p-sky',t))); c0.appendChild(chips);
+  c0.appendChild(el('div','muted',`These teams enter the build candidate set regardless of any single-factor screen. Chalk feed ready: ${b.chalk_inputs.pitchers.length} arms, ${b.chalk_inputs.stacks.length} stacks (real xSLG + Opp_TT) → use "Load from research" on the Gate tab.`));
+  s.appendChild(c0);
+  const tbl=(title,cols,rows)=>{const cc=el('div','card');cc.innerHTML=`<h2 style="font-size:13px">${title}</h2>`;const sc=el('div','scroll');const t=el('table');t.innerHTML='<thead><tr>'+cols.map(c=>`<th>${c}</th>`).join('')+'</tr></thead>';const tb=el('tbody');rows.forEach(r=>{const tr=el('tr');tr.innerHTML=r.map(x=>`<td>${x==null?'—':x}</td>`).join('');tb.appendChild(tr);});t.appendChild(tb);sc.appendChild(t);cc.appendChild(sc);return cc;};
+  s.appendChild(tbl(`Stack board — edge ratio (ceiling ÷ own) · ${b.stacks.length}`,['Stack','Median','Ceiling','Own%','Edge'],
+    b.stacks.slice(0,15).map(x=>[x.label,x.median,x.ceiling,x.own?x.own.toFixed(1):'—',`<b style="color:var(--acc)">${x.edge}</b>`])));
+  s.appendChild(tbl(`Arm board (#8) — gate as weight (#50) · ${b.arms.length}`,['Pitcher','Tm','K%','xSLG','OppTT','Own%'],
+    b.arms.slice(0,12).map(a=>[a.name,a.team,a.k_pct,`<b style="color:${(a.xslg||0)>R.xslg_cap?'var(--amb)':'var(--acc)'}">${a.xslg}</b>`,a.opp_tt,a.proj_own??'—'])));
+  s.appendChild(tbl(`Best bat matchups — opp xSLG by handedness (feeds #53) · 15`,['Hitter','Tm','Ord','Bats','vs SP','Hand','xSLG','Own%'],
+    b.bats.slice(0,15).map(h=>[h.name,h.team,h.order??'—',h.bats,h.opp_sp,h.opp_hand,`<b style="color:${h.good?'var(--acc)':''}">${h.xslg}</b>`,h.proj_own!=null?h.proj_own.toFixed(1):'—'])));
+  s.appendChild(tbl(`Rule #53 discarded-signal candidates · ${b.disc.length}`,['Hitter','Tm','Own%','xSLG','Hand'],
+    b.disc.length?b.disc.map(d=>[d.name,d.team,d.proj_own.toFixed(2),d.xslg,d.opp_hand]):[['(none — needs ownership; fires sub-2% + xSLG≥.45)','','','','']]));
+  if(b.thin){const c=el('div','card'+(b.thin.triggered?' warnbox':''));c.innerHTML=`<h2>Thin-arm slate (#39): ${b.thin.triggered?'TRIGGERED':'no'}</h2><p style="color:${b.thin.triggered?'var(--amb)':'var(--mut)'}">${b.thin.sps.length} SP(s) ≥35% own${b.thin.sps.length?': '+b.thin.sps.map(x=>x.name+' ('+(x.proj_own||0).toFixed(1)+'%)').join(', '):''}.</p>`;s.appendChild(c);}
+}
+
+//---- Gate tab
+function renderGate(){
+  const s=document.getElementById('s-gate'); s.innerHTML='';
+  const c=el('div','card');
+  c.innerHTML=`<h2>Chalk-Live Detector</h2><p>Load real xSLG + Opp_TT from the research board, or derive rough
+    rows from the pool, then add Vegas totals and favorite moneylines and analyze. v4 scores the chalk arm and
+    chalk stack separately.</p>`;
+  const btns=el('div','row');
+  const bLoad=el('button','btn ghost','Load from research'); bLoad.disabled=!S.research;
+  const bDerive=el('button','btn ghost','Derive from pool'); bDerive.disabled=!S.pool;
+  btns.append(bLoad,bDerive); c.appendChild(btns);
+  const pit=el('label','f');pit.style.flex='1';pit.innerHTML='<span>Pitcher rows (JSON)</span>';const pitT=el('textarea');pitT.rows=6;pitT.style.cssText='width:100%;background:var(--bg);border:1px solid var(--bdr2);border-radius:7px;color:var(--txt);font-family:var(--mono);font-size:11px;padding:7px';pit.appendChild(pitT);
+  const stk=el('label','f');stk.style.flex='1';stk.innerHTML='<span>Stack rows (JSON)</span>';const stkT=el('textarea');stkT.rows=6;stkT.style.cssText=pitT.style.cssText;stk.appendChild(stkT);
+  const jrow=el('div','row');pit.style.flex='1 1 320px';stk.style.flex='1 1 320px';jrow.append(pit,stk);c.appendChild(jrow);
+  const vrow=el('div','row');
+  const tot=el('label','f');tot.innerHTML='<span>Game totals (comma)</span>';const totI=el('input');totI.placeholder='11.5, 10, 9';tot.appendChild(totI);
+  const ml=el('label','f');ml.innerHTML='<span>Favorite moneylines (comma)</span>';const mlI=el('input');mlI.placeholder='-156, -180';ml.appendChild(mlI);
+  vrow.append(tot,ml);c.appendChild(vrow);
+  bLoad.onclick=()=>{pitT.value=JSON.stringify(S.research.chalk_inputs.pitchers,null,1);stkT.value=JSON.stringify(S.research.chalk_inputs.stacks,null,1);};
+  bDerive.onclick=()=>{const p=S.pool.players.filter(x=>x.is_pitcher).map(x=>({name:x.name,team:x.team,salary:x.salary,proj_own:x.adj_own||0,xslg:0,k_pct:0,opp_team_total:0}));
+    const bt={};S.pool.players.filter(x=>!x.is_pitcher&&x.order).forEach(x=>{(bt[x.team]=bt[x.team]||[]).push(x);});
+    const st=Object.entries(bt).map(([team,hs])=>({team,bat_owns:hs.sort((a,b)=>a.order-b.order).map(h=>h.adj_own||0),ceiling:hs.reduce((a,h)=>a+(h.dk95||0),0)}));
+    pitT.value=JSON.stringify(p,null,1);stkT.value=JSON.stringify(st,null,1);};
+  const go=el('button','btn primary','Analyze slate shape');const err=el('div','err');
+  const out=el('div');
+  go.onclick=()=>{err.textContent='';out.innerHTML='';try{
+    const P=JSON.parse(pitT.value||'[]'),ST=JSON.parse(stkT.value||'[]');
+    const T=totI.value.split(',').map(x=>parseFloat(x)).filter(x=>!isNaN(x));
+    const F=mlI.value.split(',').map(x=>parseInt(x)).filter(x=>!isNaN(x));
+    S.chalk=chalkDetect(P,ST,T,F); renderChalk(out,S.chalk);
+  }catch(e){err.textContent=e.message;}};
+  c.append(go,err); s.append(c,out);
+  if(S.chalk)renderChalk(out,S.chalk);
+}
+function renderChalk(out,d){
+  out.innerHTML='';const c=el('div','card');
+  c.innerHTML=`<div class="row" style="align-items:center"><span style="font-size:28px;font-weight:750" class="mono">${d.score}/4</span>
+    <span class="pill ${d.score>=2?'p-warn':'p-pass'}" style="font-size:14px">${d.verdict}</span>
+    <span class="muted">Rule #34 block: <b>${d.block}</b></span></div>`;
+  const sg=el('div','grid g4');Object.entries(d.signals).forEach(([k,v])=>{const x=el('div','chk');x.innerHTML=`<span class="pill ${v.fired?'p-warn':'p-info'}">${v.fired?'FIRED':'—'}</span><span>${k}</span>`;sg.appendChild(x);});c.appendChild(sg);
+  const sp=el('div','stat');sp.innerHTML=`<span style="text-transform:uppercase;letter-spacing:.05em">Detector split (v4)</span><div class="row" style="margin-top:5px">
+    <span class="pill ${d.split.arm_live?'p-warn':'p-info'}">arm ${d.split.arm_live?'live':'quiet'}</span>
+    <span class="pill ${d.split.stack_trap?'p-fail':d.split.stack_live?'p-warn':'p-info'}">stack ${d.split.stack_trap?'TRAP':d.split.stack_live?'live':'quiet'}</span></div>`;c.appendChild(sp);
+  if(d.lev.length){const l=el('div');l.innerHTML=`<div class="muted" style="text-transform:uppercase;font-size:10px;letter-spacing:.05em">Leverage exceptions (#31/#50, DO NOT ZERO)</div>`+d.lev.map(p=>`<div class="mono" style="color:var(--acc)">${p.name} — ${p.proj_own}% own, xSLG ${p.xslg}</div>`).join('');c.appendChild(l);}
+  out.appendChild(c);
+}
+
+//---- Build tab
+function renderBuild(){
+  const s=document.getElementById('s-build'); s.innerHTML='';
+  const ctx=slateCtx();
+  if(!ctx.shape){const w=el('div','card warnbox');w.innerHTML='<p style="color:var(--amb)">Set the <b>contest shape</b> in the bar above first — it selects the optimizer objective (p99 for large-field GPP, p75/p95 blend for small-field WTA).</p>';s.appendChild(w);}
+  const c=el('div','card');
+  c.innerHTML=`<h2>Build portfolio</h2><p>Objective: <b>${ctx.shape==='small_field_wta'?'p75/p95 blend':ctx.shape==='large_field_gpp'?'p99-weighted':'—'}</b>${ctx.field&&ctx.fee?` · ownership transform ${ctx.field>=R.field42?'#42':'#51'} auto-applied`:''}. Constraints (salary band, max-5/team, ≥2 games, no hitter-vs-P, dead-bat #49, ceiling #52) enforced by construction.</p>`;
+  const btn=el('button','btn primary',`Build ${ctx.n} lineups`); btn.disabled=!S.pool||!ctx.shape;
+  const err=el('div','err'); const out=el('div');
+  btn.onclick=()=>{err.textContent='';try{
+    let pool=S.pool.players;
+    if(ctx.field!=null&&ctx.fee!=null)pool=applyTransform(pool,ctx.field,ctx.fee);
+    const res=buildPortfolio(pool,ctx.shape,ctx.n,ctx.field);
+    // surface #53 signals from research xSLG (bats not rostered, sub-2% + xSLG>=.45)
+    S.signals=[];
+    if(Object.keys(S.xslgMap).length){
+      const rostered=new Set();res.lineups.forEach(lu=>lu.forEach(p=>rostered.add(p.dk_id)));
+      pool.forEach(p=>{if(p.is_pitcher||rostered.has(p.dk_id))return;const x=S.xslgMap[norm(p.name)];
+        if(p.adj_own!=null&&p.adj_own<R.r53.own&&x!=null&&x>=R.r53.xslg)
+          S.signals.push({name:p.name,team:p.team,proj_own:p.adj_own,xslg:x,adj:null,reason:''});});
+    }
+    S.build={...res,ctx}; renderBuildResult(out); setTab('build');
+  }catch(e){err.textContent=e.message+'\n'+e.stack;}};
+  c.append(btn,err); s.append(c,out);
+  if(S.build)renderBuildResult(out);
+}
+function renderBuildResult(out){
+  out.innerHTML=''; const b=S.build; if(!b)return;
+  const top5=S.research?S.research.top5:null;
+  const unadj=S.signals.filter(x=>!x.adj).length;
+  const rep=validate(b.lineups,{shape:b.ctx.shape,field:b.ctx.field,top5,unadj});
+  // portfolio
+  const c1=el('div','card');
+  c1.innerHTML=`<div class="row" style="justify-content:space-between"><h2>Portfolio · ${b.n_built}/${b.n_requested} lineups</h2><span class="tag">${b.objective} · fired ${Object.keys(b.fired_rules).map(r=>'#'+r).join(', ')}</span></div>`;
+  const sc=el('div','scroll');
+  b.lineups.forEach((lu,i)=>{const sal=lu.reduce((a,p)=>a+p.salary,0);const d=el('div','lu');
+    d.innerHTML=`<span style="color:var(--dim)">#${i+1}</span> `+lu.map(p=>`<span class="slot">${p.slot}</span> ${p.name.split(' ').slice(-1)[0]}<span style="color:var(--dim)">·${p.team}</span>`).join('  ')+` <span style="float:right;color:${sal>50000||sal<48500?'var(--red)':'var(--dim)'}">$${sal}</span>`;
+    sc.appendChild(d);});
+  c1.appendChild(sc); out.appendChild(c1);
+  // #53 signals hard block
+  if(S.signals.length){
+    const c2=el('div','card');
+    c2.innerHTML=`<div class="row" style="justify-content:space-between"><h2>Discarded-Signal Log (Rule #53)</h2><span class="pill ${unadj?'p-fail':'p-pass'}">${unadj?unadj+' UNADJUDICATED — export blocked':'all adjudicated'}</span></div>`;
+    S.signals.forEach((sig,idx)=>{const row=el('div','stat');
+      if(sig.adj){row.innerHTML=`<div class="mono">${sig.name} (${sig.team}) — own ${sig.proj_own.toFixed(2)}% xSLG ${sig.xslg} · <span class="pill ${sig.adj==='keep'?'p-pass':'p-info'}">${sig.adj}</span> ${sig.reason}</div>`;}
+      else{row.innerHTML=`<div class="mono" style="margin-bottom:5px">${sig.name} (${sig.team}) — own ${sig.proj_own.toFixed(2)}% · xSLG ${sig.xslg}</div>`;
+        const r=el('div','row');const sel=el('select');sel.innerHTML='<option value="">decide…</option><option value="keep">keep</option><option value="drop">drop</option>';
+        const rea=el('input');rea.placeholder='written reason (required)';rea.style.flex='1';
+        const bb=el('button','btn primary','Adjudicate');bb.onclick=()=>{if(!sel.value||!rea.value.trim())return;sig.adj=sel.value;sig.reason=rea.value.trim();renderBuildResult(out);};
+        r.append(sel,rea,bb);row.appendChild(r);}
+      c2.appendChild(row);});
+    out.appendChild(c2);
+  }
+  // validation
+  const c3=el('div','card');
+  c3.innerHTML=`<div class="row" style="align-items:center"><span class="pill ${rep.export_allowed&&!unadj?'p-pass':'p-fail'}">${rep.export_allowed&&!unadj?'EXPORT ALLOWED':'EXPORT BLOCKED'}</span><span class="muted">${rep.n_fail} hard failure(s) · ${rep.n_warn} warning(s)</span></div>`;
+  if(rep.failures.length){const d=el('div');d.innerHTML='<div class="muted" style="color:var(--red);text-transform:uppercase;font-size:10px;letter-spacing:.05em">Hard failures</div>'+rep.failures.map(c=>`<div class="chk"><span class="pill p-fail">${c.rule?'#'+c.rule:'fail'}</span><span><span class="tag">${c.check}</span> — ${c.reason}</span></div>`).join('');c3.appendChild(d);}
+  if(rep.warnings.length){const d=el('div');d.innerHTML='<div class="muted" style="color:var(--amb);text-transform:uppercase;font-size:10px;letter-spacing:.05em">Warnings</div>'+rep.warnings.map(c=>`<div class="chk"><span class="pill p-warn">${c.rule?'#'+c.rule:'warn'}</span><span><span class="tag">${c.check}</span> — ${c.reason}</span></div>`).join('');c3.appendChild(d);}
+  const det=el('details');det.innerHTML=`<summary>All ${rep.checks.length} checks</summary>`;const dd=el('div');dd.style.marginTop='6px';
+  dd.innerHTML=rep.checks.map(c=>`<div class="chk"><span class="pill ${c.passed?'p-pass':c.severity==='fail'?'p-fail':c.severity==='warn'?'p-warn':'p-info'}">${c.rule?'#'+c.rule:c.severity}</span><span><span class="tag">${c.check}</span> — ${c.reason}</span></div>`).join('');det.appendChild(dd);c3.appendChild(det);
+  out.appendChild(c3);
+  // export
+  const c4=el('div','card');c4.style.flexDirection='row';c4.style.justifyContent='space-between';c4.style.alignItems='center';
+  c4.innerHTML='<div class="muted">Export is hard-gated: all validate() failures clear AND zero unadjudicated Rule #53 signals.</div>';
+  const eb=el('button','btn primary','Export DK CSV');eb.disabled=!rep.export_allowed||unadj>0;
+  eb.onclick=()=>download('dk_upload.csv',exportCSV(b.lineups));
+  c4.appendChild(eb);out.appendChild(c4);
+}
+
+//---- Rules tab
+function renderRules(){
+  const s=document.getElementById('s-rules'); s.innerHTML='';
+  const c=el('div','card');
+  c.innerHTML=`<h2>Rules — editable thresholds</h2><p>Rules are data. Edit a threshold and it applies to the next build/validate — no code change. (This browser build carries the numeric thresholds; the full 53-rule governance ledger with hit/miss tracking lives in the FastAPI backend.)</p>`;
+  const flat=[['salary_floor',R.salary_floor],['salary_cap',R.salary_cap],['max_hitters',R.max_hitters],['min_games',R.min_games],
+    ['xslg_cap',R.xslg_cap],['top_n (#50)',R.top_n],['field42 cutoff',R.field42],['field44 cutoff',R.field44],
+    ['dead dk25 floor (#49)',R.dead_dk25_floor],['dead cap (#49)',R.dead_cap],['ceiling min (#52)',R.ceiling_min],
+    ['hitter exp cap %',R.hitter_cap],['sp exp cap %',R.sp_cap],['granularity floor',R.granularity]];
+  const keys=['salary_floor','salary_cap','max_hitters','min_games','xslg_cap','top_n','field42','field44','dead_dk25_floor','dead_cap','ceiling_min','hitter_cap','sp_cap','granularity'];
+  const grid=el('div','grid g4');
+  flat.forEach(([label],i)=>{const k=keys[i];const l=el('label','f');l.innerHTML=`<span>${label}</span>`;const inp=el('input');inp.type='number';inp.step='any';inp.value=R[k];inp.onchange=()=>{R[k]=parseFloat(inp.value);};l.appendChild(inp);grid.appendChild(l);});
+  c.appendChild(grid);
+  const note=el('div','muted');note.innerHTML='Ownership-transform multipliers (#42/#51) and the #53 own/xSLG thresholds use their playbook defaults; edit them in <span class="tag">R.t42 / R.t51 / R.r53</span> in source if you need to retune here, or use the backend Rules ledger for the full governance surface.';
+  c.appendChild(note);
+  s.appendChild(c);
+}
+
+//====================================================================
+// wire tabs render + slate reactivity
+//====================================================================
+document.querySelectorAll('nav button').forEach(b=>b.addEventListener('click',()=>{
+  ({ingest:renderIngest,research:renderResearch,gate:renderGate,build:renderBuild,rules:renderRules})[b.dataset.t]();
+}));
+['shape','field','fee','nlu'].forEach(id=>document.getElementById(id).addEventListener('change',()=>{if(document.getElementById('s-build').classList.contains('on'))renderBuild();}));
+renderIngest();renderResearch();renderGate();renderBuild();renderRules();
+</script>

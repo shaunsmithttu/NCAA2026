@@ -78,8 +78,13 @@ def build_portfolio(players: list[dict], *, contest_shape: str, n_lineups: int,
     enforce_dead = field_size is not None and field_size < dead_cutoff
     enforce_ceiling = contest_shape == "small_field_wta"
 
-    max_hitter_appear = math.ceil(hitter_cap_pct * n_lineups)
-    max_sp_appear = math.ceil(sp_cap_pct * n_lineups)
+    # Exposure caps are unenforceable below the granularity floor (~6 lineups) —
+    # don't over-constrain tiny portfolios by construction (spec §4). floor, not
+    # ceil, above it: ceil(0.5*15)=8 -> 8/15=53% would exceed the 50% cap that
+    # validate() enforces (c/n > cap).
+    cap_on = n_lineups >= rl.get_param(13, "granularity_floor_lineups", 6)
+    max_hitter_appear = math.floor(hitter_cap_pct * n_lineups) if cap_on else n_lineups
+    max_sp_appear = math.floor(sp_cap_pct * n_lineups) if cap_on else n_lineups
     appear = defaultdict(int)
 
     lineups: list[list[dict]] = []
@@ -146,14 +151,15 @@ def build_portfolio(players: list[dict], *, contest_shape: str, n_lineups: int,
             if ceil_ok:
                 prob += pulp.lpSum(x[i] for i in ceil_ok) >= 1
                 fired[52] = f"≥1 hitter with dk95≥{ceil_min} required"
-        # exposure caps by construction (#13/#33)
-        for i, p in idx.items():
-            cap = max_sp_appear if p["is_pitcher"] else max_hitter_appear
-            if appear[_pkey(p)] >= cap:
-                prob += x[i] == 0
-        if appear:
-            fired.setdefault(13, "hitter exposure cap enforced by construction")
-            fired.setdefault(33, "SP exposure cap enforced by construction")
+        # exposure caps by construction (#13/#33) — only above the granularity floor
+        if cap_on:
+            for i, p in idx.items():
+                cap = max_sp_appear if p["is_pitcher"] else max_hitter_appear
+                if appear[_pkey(p)] >= cap:
+                    prob += x[i] == 0
+            if appear:
+                fired.setdefault(13, "hitter exposure cap enforced by construction")
+                fired.setdefault(33, "SP exposure cap enforced by construction")
         # locks / bans
         for i, p in idx.items():
             if locks and _pkey(p) in locks:

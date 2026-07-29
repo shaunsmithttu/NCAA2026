@@ -24,6 +24,10 @@ Rule #53). Rules are **data, not code** — every threshold lives in the SQLite
 | Storage | SQLite (rules, builds, calibration, signals, post-mortems) | `backend/app/db.py` |
 | Frontend | React + Vite + Tailwind | `frontend/` |
 
+## Zero-install web app (`web/index.html`)
+
+A single self-contained HTML file that runs the whole flow **client-side in the browser** — no backend, no install. Upload your SaberSim (and optionally DKEntries) + research CSVs, build, validate, and export a DK CSV; your files never leave the browser. Open `web/index.html` directly, host it on GitHub Pages, or use the published artifact URL. It carries the numeric rule thresholds and a heuristic optimizer (multi-start randomized greedy + local search); the FastAPI backend below adds the PuLP/CBC exact optimizer, the full 53-rule governance ledger, and SQLite persistence.
+
 ## Running it
 
 ### Backend

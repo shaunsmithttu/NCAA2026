@@ -46,6 +46,18 @@ def test_real_gpp_build_and_export():
         assert 48_500 <= sum(p["salary"] for p in lu) <= 50_000
 
 
+def test_odd_n_exposure_cap_stays_within_limit():
+    """Regression: an odd lineup count must not let the by-construction exposure
+    cap exceed the 50%/20% caps validate() enforces (ceil(0.5*15)=8 -> 53%)."""
+    pool = ingest.pool_from_projections(PROJS)["players"]
+    res = optimizer.build_portfolio(pool, contest_shape="large_field_gpp",
+                                    n_lineups=15, field_size=20000)
+    assert res["n_built"] == 15
+    rep = validate.validate_portfolio(res["lineups"], {
+        "contest_shape": "large_field_gpp", "field_size": 20000})
+    assert rep["export_allowed"], rep["failures"]
+
+
 def test_real_wta_enforces_hard_constraints():
     pool = ingest.pool_from_projections(PROJS)["players"]
     res = optimizer.build_portfolio(pool, contest_shape="small_field_wta",
