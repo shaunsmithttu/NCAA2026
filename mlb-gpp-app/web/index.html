@@ -187,7 +187,8 @@ function parseProjections(text){
       dk25:num(low['dk_25_percentile']), dk75:num(low['dk_75_percentile']),
       dk95:num(low['dk_95_percentile']), dk99:num(low['dk_99_percentile']),
       adj_own:num(low['adj own']!=null?low['adj own']:low['my own']),
-      saber_total:num(low['saber total']),
+      saber_team:num(low['saber team']),   // this team's implied run total
+      saber_total:num(low['saber total']),  // the game total (both teams)
       order:ord==null?null:Math.round(ord),
       status:(r['Status']||low['status']||'').trim(), is_pitcher:isP,
     });
@@ -202,7 +203,7 @@ function poolFromProjections(projs){
     return {dk_id:p.dfs_id, name:p.name, positions, salary:p.salary?Math.round(p.salary):0,
       team:p.team, opp:p.opp, game_info:gi(p.team,p.opp), is_pitcher:p.is_pitcher,
       proj:p.proj, dk95:p.dk95, dk99:p.dk99, dk25:p.dk25, dk75:p.dk75,
-      adj_own:p.adj_own, order:p.order, status:p.status, saber_total:p.saber_total,
+      adj_own:p.adj_own, order:p.order, status:p.status, saber_team:p.saber_team, saber_total:p.saber_total,
       key:[norm(p.name),p.team,p.is_pitcher]};
   });
   return {players, source:'projections_only', n_players:players.length, n_missing:miss};
@@ -234,7 +235,7 @@ function reconcile(dk, projs){
     const k=[norm(d.name),d.team,d.is_pitcher].join('|'); const pr=pByKey[k];
     if(!pr){unDK.push(d.name);continue;} used.add(k);
     players.push({...d, proj:pr.proj, dk95:pr.dk95, dk99:pr.dk99, dk25:pr.dk25, dk75:pr.dk75,
-      adj_own:pr.adj_own, order:pr.order, status:pr.status, saber_total:pr.saber_total});
+      adj_own:pr.adj_own, order:pr.order, status:pr.status, saber_team:pr.saber_team, saber_total:pr.saber_total});
   }
   return {players, source:'reconciled', n_players:players.length, n_dk:dk.length,
     n_projections:projs.length, n_matched:players.length, unmatched_dk:unDK,
@@ -284,67 +285,120 @@ function pickWeighted(cands){ // weight by value, favor top
   for(const c of top){ x-=Math.max(.1,c._v); if(x<=0)return c; }
   return top[0];
 }
-function buildPortfolio(pool, shape, n, field){
+// Vegas implied totals straight from the SaberSim file — no external API needed.
+// "Saber Team" is the team's implied run total (drives stack selection); "Saber
+// Total" is the game total (feeds the chalk detector).
+function vegasFromPool(players){
+  const tt={}, topp={}, games={};
+  players.forEach(p=>{
+    if(p.opp)topp[p.team]=p.opp;
+    if(p.saber_team!=null)tt[p.team]=p.saber_team;
+    else if(p.saber_total!=null&&tt[p.team]==null)tt[p.team]=p.saber_total/2; // fallback
+    if(p.saber_total!=null)games[gameKey(gi(p.team,p.opp))]=p.saber_total;
+  });
+  return {team_totals:tt, team_opp:topp, game_totals:games};
+}
+const ORD_SLOTS=["P","P","C","1B","2B","3B","SS","OF","OF","OF"];
+function orderToSlots(chosen){
+  const used=[], out=[];
+  for(const slot of ORD_SLOTS){const i=chosen.findIndex((p,ix)=>!used.includes(ix)&&p.slot===slot);
+    if(i>=0){out.push(chosen[i]);used.push(i);}}
+  chosen.forEach((p,i)=>{if(!used.includes(i))out.push(p);});
+  return out;
+}
+// Stack-first builder: a primary stack (4-5 correlated bats from one high-total
+// team) + a secondary mini-stack (2-3 from a different game), then singles fill
+// the rest — the GPP organizing unit (Rules #23/#25/#27), not a spread of best-
+// per-slot bats. Team selection is weighted by ceiling value AND Vegas total.
+function buildPortfolio(pool, shape, n, field, opts){
+  opts=opts||{}; const primaryK=opts.primaryK??4, secondaryM=opts.secondaryM??3;
   const enforceDead=field!=null&&field<R.field44;
   const enforceCeil=shape==='small_field_wta';
   const valid=pool.filter(p=>p.salary>0&&eligSlots(p).length);
   valid.forEach(p=>p._v=luValue(p,shape));
-  const minP=Math.min(...valid.filter(p=>p.is_pitcher).map(p=>p.salary));
-  const minH=Math.min(...valid.filter(p=>!p.is_pitcher).map(p=>p.salary));
-  const slotMin=SLOTS.map(s=>s==='P'?minP:minH);
-  // Exposure caps are unenforceable below the granularity floor (~6 lineups) —
-  // don't over-constrain tiny WTA portfolios by construction (matches spec §4).
+  const hitters=valid.filter(p=>!p.is_pitcher), pitchers=valid.filter(p=>p.is_pitcher);
+  const minH=Math.min(...hitters.map(p=>p.salary));
+  const vg=vegasFromPool(pool); const tt=vg.team_totals, topp=vg.team_opp;
+  const teams=[...new Set(hitters.map(h=>h.team))];
+  const teamHitters={}; teams.forEach(t=>teamHitters[t]=hitters.filter(h=>h.team===t)
+    .sort((a,b)=>b._v-a._v));
+  const gameOf=t=>gameKey(gi(t,topp[t]));
+  const avgTot=Object.values(tt).length?Object.values(tt).reduce((a,b)=>a+b,0)/Object.values(tt).length:4.5;
+
   const capOn=n>=R.granularity;
-  // floor, not ceil: ceil(0.5*15)=8 -> 8/15=53% would exceed the 50% cap that
-  // validate() then enforces. floor keeps construction within the stated cap.
   const hitterCap=capOn?Math.floor(R.hitter_cap/100*n):Infinity;
   const spCap=capOn?Math.floor(R.sp_cap/100*n):Infinity;
-  const use={}, seen=new Set(), lineups=[]; const fired={44:`objective: ${shape}`};
+  const use={}, teamUse={}, seen=new Set(), lineups=[];
+  const fired={44:`objective: ${shape}`, 23:`primary stack ${primaryK}`, 25:secondaryM?`secondary mini ${secondaryM}`:'no secondary'};
+
+  function pickTeam(cands,K){
+    if(!cands.length)return null;
+    const scored=cands.map(t=>{const top=teamHitters[t].slice(0,K);
+      const v=top.reduce((a,h)=>a+h._v,0);
+      const vegas=(tt[t]!=null?tt[t]:avgTot)/avgTot;      // >1 for high-total teams
+      const div=1/(1+(teamUse[t]||0)*0.6);                 // spread primaries across teams
+      return {t, w:Math.max(.1, v*vegas*div)};});
+    const tot=scored.reduce((a,s)=>a+s.w,0); let x=Math.random()*tot;
+    for(const s of scored){x-=s.w; if(x<=0)return s.t;} return scored[0].t;
+  }
 
   function tryBuild(){
-    const chosen=[], byId=new Set(), teamHit={}, pitTeams=new Set(), games=new Set();
-    let salary=0, dead=0, hasCeil=false;
-    for(let si=0;si<SLOTS.length;si++){
-      const slot=SLOTS[si];
-      const remainMin=slotMin.slice(si+1).reduce((a,b)=>a+b,0);
-      const maxSpend=R.salary_cap-salary-remainMin;
-      let cands=valid.filter(p=>{
-        if(byId.has(p.dk_id))return false;
-        if(use[p.dk_id]>= (p.is_pitcher?spCap:hitterCap))return false;
-        if(!eligSlots(p).includes(slot))return false;
-        if(p.salary>maxSpend)return false;
-        if(p.is_pitcher){ /* pitcher: no rostered hitter he faces */
-          for(const h of chosen){ if(!h.is_pitcher&&h.opp===p.team)return false; }
-        } else {
-          if((teamHit[p.team]||0)>=R.max_hitters)return false;
-          if(pitTeams.has(p.opp))return false; // faces rostered pitcher
-          if(enforceDead&&p.dk25!=null&&p.dk25<R.dead_dk25_floor&&dead>=R.dead_cap)return false;
-        }
-        return true;
-      });
-      if(!cands.length)return null;
-      // WTA: if last hitter chance and no ceiling bat yet, force one
-      if(enforceCeil&&!hasCeil&&!SLOTS.slice(si+1).some(x=>x!=='P')&&slot!=='P'){
-        const c2=cands.filter(p=>(p.dk95||0)>=R.ceiling_min); if(c2.length)cands=c2;
-      }
-      cands.sort((a,b)=>b._v-a._v);
-      const pick=pickWeighted(cands);
-      chosen.push(pick); byId.add(pick.dk_id); salary+=pick.salary;
-      games.add(gameKey(pick.game_info));
-      if(pick.is_pitcher)pitTeams.add(pick.team);
-      else{ teamHit[pick.team]=(teamHit[pick.team]||0)+1;
-        if(pick.dk25!=null&&pick.dk25<R.dead_dk25_floor)dead++;
-        if((pick.dk95||0)>=R.ceiling_min)hasCeil=true; }
+    const HS={C:1,"1B":1,"2B":1,"3B":1,SS:1,OF:3};
+    const chosen=[], byId=new Set(), th={}, pt=new Set(); let sal=0, dead=0, hasCeil=false;
+    const openN=()=>Object.values(HS).reduce((a,b)=>a+b,0);
+    function place(h){
+      if(byId.has(h.dk_id)||use[h.dk_id]>=hitterCap)return false;
+      if((th[h.team]||0)>=R.max_hitters||pt.has(h.opp))return false;
+      if(enforceDead&&h.dk25!=null&&h.dk25<R.dead_dk25_floor&&dead>=R.dead_cap)return false;
+      const slots=eligSlots(h).filter(s=>HS[s]>0); if(!slots.length)return false;
+      if(sal+h.salary+(openN()-1)*minH>R.salary_cap)return false;   // keep floor/cap feasible
+      slots.sort((a,b)=>(HS[a]-HS[b])||(a==="OF"?1:-1));            // fill scarce slots first
+      const slot=slots[0]; HS[slot]--; chosen.push({...h,slot}); byId.add(h.dk_id); sal+=h.salary;
+      th[h.team]=(th[h.team]||0)+1; if(h.dk25!=null&&h.dk25<R.dead_dk25_floor)dead++;
+      if((h.dk95||0)>=R.ceiling_min)hasCeil=true; return true;
     }
-    if(salary<R.salary_floor)return null;
-    if(games.size<R.min_games)return null;
+    // 1. two pitchers (value-weighted), leaving budget for the stacks
+    const pc=pitchers.filter(p=>(use[p.dk_id]||0)<spCap).sort((a,b)=>b._v-a._v);
+    for(let k=0;k<2;k++){
+      const cand=pc.filter(p=>!byId.has(p.dk_id)&&sal+p.salary<=R.salary_cap-8*minH);
+      if(!cand.length)return null;
+      const pick=pickWeighted(cand); chosen.push({...pick,slot:"P"}); byId.add(pick.dk_id);
+      sal+=pick.salary; pt.add(pick.team);
+    }
+    // 2. primary stack — a real 4-5 man correlated block
+    const primOK=teams.filter(t=>!pt.has(topp[t])&&teamHitters[t].length>=Math.min(primaryK,3));
+    const pTeam=pickTeam(primOK,primaryK); if(!pTeam)return null;
+    let placed=0; for(const h of teamHitters[pTeam]){ if(placed>=primaryK)break; if(place(h))placed++; }
+    if(placed<Math.min(primaryK,4)&&placed<primaryK)return null;    // demand a genuine stack
+    teamUse[pTeam]=(teamUse[pTeam]||0)+1;
+    // 3. secondary mini-stack from a DIFFERENT game (Rule #25)
+    if(secondaryM>0){
+      const secOK=teams.filter(t=>t!==pTeam&&gameOf(t)!==gameOf(pTeam)&&!pt.has(topp[t])&&teamHitters[t].length>=Math.min(secondaryM,2));
+      const sTeam=pickTeam(secOK,secondaryM);
+      if(sTeam){let sp=0; for(const h of teamHitters[sTeam]){ if(sp>=secondaryM)break; if(place(h))sp++; }}
+    }
+    // 4. fill remaining hitter slots with the best available singles
+    let guard=0;
+    while(openN()>0&&guard++<40){
+      let cands=hitters.filter(h=>!byId.has(h.dk_id)&&(use[h.dk_id]||0)<hitterCap
+        &&eligSlots(h).some(s=>HS[s]>0)&&(th[h.team]||0)<R.max_hitters&&!pt.has(h.opp)
+        &&sal+h.salary+(openN()-1)*minH<=R.salary_cap);
+      if(enforceCeil&&!hasCeil){const c2=cands.filter(h=>(h.dk95||0)>=R.ceiling_min); if(c2.length)cands=c2;}
+      if(!cands.length)return null;
+      cands.sort((a,b)=>b._v-a._v);
+      if(!place(pickWeighted(cands.slice(0,14))))return null;
+    }
+    if(openN()>0||sal<R.salary_floor)return null;
     if(enforceCeil&&!hasCeil)return null;
-    return {players:chosen.map((p,i)=>({...p,slot:SLOTS[i]})), salary, value:chosen.reduce((a,p)=>a+p._v,0)};
+    const gset=new Set(chosen.map(p=>gameKey(p.game_info||gi(p.team,p.opp))));
+    if(gset.size<R.min_games)return null;
+    return {players:orderToSlots(chosen), salary:sal, value:chosen.reduce((a,p)=>a+p._v,0),
+            primary:pTeam, primaryN:placed};
   }
 
   for(let i=0;i<n;i++){
     let best=null;
-    for(let s=0;s<60;s++){
+    for(let s=0;s<90;s++){
       const lu=tryBuild(); if(!lu)continue;
       const h=lu.players.map(p=>p.dk_id).sort().join('|');
       if(seen.has(h))continue;
@@ -357,7 +411,7 @@ function buildPortfolio(pool, shape, n, field){
   if(enforceDead)fired[49]='dead-bat cap enforced';
   if(enforceCeil)fired[52]='ceiling-bat required';
   if(capOn)Object.assign(fired,{13:'hitter exposure cap',33:'SP exposure cap'});
-  return {lineups, n_built:lineups.length, n_requested:n,
+  return {lineups, n_built:lineups.length, n_requested:n, vegas:vg,
     objective:shape==='small_field_wta'?'p75_p95_blend':'p99_weighted', fired_rules:fired};
 }
 
@@ -642,10 +696,13 @@ function renderGate(){
   const ml=el('label','f');ml.innerHTML='<span>Favorite moneylines (comma)</span>';const mlI=el('input');mlI.placeholder='-156, -180';ml.appendChild(mlI);
   vrow.append(tot,ml);c.appendChild(vrow);
   bLoad.onclick=()=>{pitT.value=JSON.stringify(S.research.chalk_inputs.pitchers,null,1);stkT.value=JSON.stringify(S.research.chalk_inputs.stacks,null,1);};
-  bDerive.onclick=()=>{const p=S.pool.players.filter(x=>x.is_pitcher).map(x=>({name:x.name,team:x.team,salary:x.salary,proj_own:x.adj_own||0,xslg:0,k_pct:0,opp_team_total:0}));
+  bDerive.onclick=()=>{const vg=vegasFromPool(S.pool.players);
+    const p=S.pool.players.filter(x=>x.is_pitcher).map(x=>({name:x.name,team:x.team,salary:x.salary,proj_own:x.adj_own||0,xslg:0,k_pct:0,opp_team_total:vg.team_totals[x.opp]||0}));
     const bt={};S.pool.players.filter(x=>!x.is_pitcher&&x.order).forEach(x=>{(bt[x.team]=bt[x.team]||[]).push(x);});
     const st=Object.entries(bt).map(([team,hs])=>({team,bat_owns:hs.sort((a,b)=>a.order-b.order).map(h=>h.adj_own||0),ceiling:hs.reduce((a,h)=>a+(h.dk95||0),0)}));
-    pitT.value=JSON.stringify(p,null,1);stkT.value=JSON.stringify(st,null,1);};
+    pitT.value=JSON.stringify(p,null,1);stkT.value=JSON.stringify(st,null,1);
+    // auto-fill Vegas game totals from SaberSim (no manual entry needed)
+    totI.value=Object.values(vg.game_totals).map(v=>v.toFixed(1)).join(', ');};
   const go=el('button','btn primary','Analyze slate shape');const err=el('div','err');
   const out=el('div');
   go.onclick=()=>{err.textContent='';out.innerHTML='';try{
@@ -676,13 +733,18 @@ function renderBuild(){
   const ctx=slateCtx();
   if(!ctx.shape){const w=el('div','card warnbox');w.innerHTML='<p style="color:var(--amb)">Set the <b>contest shape</b> in the bar above first — it selects the optimizer objective (p99 for large-field GPP, p75/p95 blend for small-field WTA).</p>';s.appendChild(w);}
   const c=el('div','card');
-  c.innerHTML=`<h2>Build portfolio</h2><p>Objective: <b>${ctx.shape==='small_field_wta'?'p75/p95 blend':ctx.shape==='large_field_gpp'?'p99-weighted':'—'}</b>${ctx.field&&ctx.fee?` · ownership transform ${ctx.field>=R.field42?'#42':'#51'} auto-applied`:''}. Constraints (salary band, max-5/team, ≥2 games, no hitter-vs-P, dead-bat #49, ceiling #52) enforced by construction.</p>`;
+  c.innerHTML=`<h2>Build portfolio</h2><p>Objective: <b>${ctx.shape==='small_field_wta'?'p75/p95 blend':ctx.shape==='large_field_gpp'?'p99-weighted':'—'}</b>${ctx.field&&ctx.fee?` · ownership transform ${ctx.field>=R.field42?'#42':'#51'} auto-applied`:''}. Stack-first: a primary 4–5 man stack + a secondary mini from another game (Rules #23/#25/#27). Team selection weighted by ceiling <b>and Vegas implied total</b> (from the SaberSim Saber&nbsp;Total column). Constraints enforced by construction.</p>`;
+  const sc=el('div','row');
+  const pk=el('label','f');pk.innerHTML='<span>Primary stack</span>';const pkS=el('select');[5,4,3].forEach(v=>{const o=el('option',null,v+'-man');o.value=v;pkS.appendChild(o);});pkS.value=String(S._primaryK||4);pk.appendChild(pkS);
+  const sk=el('label','f');sk.innerHTML='<span>Secondary mini</span>';const skS=el('select');[['3','3-man'],['2','2-man'],['0','none']].forEach(([v,l])=>{const o=el('option',null,l);o.value=v;skS.appendChild(o);});skS.value=String(S._secondaryM??3);sk.appendChild(skS);
+  pkS.onchange=()=>S._primaryK=Number(pkS.value); skS.onchange=()=>S._secondaryM=Number(skS.value);
+  sc.append(pk,sk); c.appendChild(sc);
   const btn=el('button','btn primary',`Build ${ctx.n} lineups`); btn.disabled=!S.pool||!ctx.shape;
   const err=el('div','err'); const out=el('div');
   btn.onclick=()=>{err.textContent='';try{
     let pool=S.pool.players;
     if(ctx.field!=null&&ctx.fee!=null)pool=applyTransform(pool,ctx.field,ctx.fee);
-    const res=buildPortfolio(pool,ctx.shape,ctx.n,ctx.field);
+    const res=buildPortfolio(pool,ctx.shape,ctx.n,ctx.field,{primaryK:Number(pkS.value),secondaryM:Number(skS.value)});
     // surface #53 signals from research xSLG (bats not rostered, sub-2% + xSLG>=.45)
     S.signals=[];
     if(Object.keys(S.xslgMap).length){
@@ -701,12 +763,32 @@ function renderBuildResult(out){
   const top5=S.research?S.research.top5:null;
   const unadj=S.signals.filter(x=>!x.adj).length;
   const rep=validate(b.lineups,{shape:b.ctx.shape,field:b.ctx.field,top5,unadj});
+  // vegas panel (implied team totals from SaberSim)
+  if(b.vegas&&Object.keys(b.vegas.team_totals).length){
+    const cv=el('div','card');
+    const top=Object.entries(b.vegas.team_totals).sort((a,b2)=>b2[1]-a[1]).slice(0,8);
+    cv.innerHTML=`<h2 style="font-size:13px">Vegas implied totals (from SaberSim) — top offenses</h2>`;
+    const chips=el('div','row');
+    top.forEach(([t,v])=>{const c=el('span','pill p-sky');c.textContent=`${t} ${v.toFixed(2)}`;chips.appendChild(c);});
+    cv.appendChild(chips);
+    cv.appendChild(el('div','muted','Higher implied total = better stack environment; the builder weights primary-stack selection by these. Game totals feed the chalk detector on the Gate tab.'));
+    out.appendChild(cv);
+  }
+  // stacking summary across the portfolio
+  const stackCounts={};
+  b.lineups.forEach(lu=>{const tc={};lu.filter(p=>!p.is_pitcher).forEach(p=>tc[p.team]=(tc[p.team]||0)+1);
+    const prim=Object.entries(tc).sort((a,b2)=>b2[1]-a[1])[0]; if(prim)stackCounts[prim[0]]=(stackCounts[prim[0]]||0)+1;});
+  const stackSummary=Object.entries(stackCounts).sort((a,b2)=>b2[1]-a[1]).map(([t,c])=>`${t} ${c}`).join(' · ');
   // portfolio
   const c1=el('div','card');
   c1.innerHTML=`<div class="row" style="justify-content:space-between"><h2>Portfolio · ${b.n_built}/${b.n_requested} lineups</h2><span class="tag">${b.objective} · fired ${Object.keys(b.fired_rules).map(r=>'#'+r).join(', ')}</span></div>`;
+  if(stackSummary)c1.appendChild(el('div','muted','Primary stacks: '+stackSummary));
   const sc=el('div','scroll');
-  b.lineups.forEach((lu,i)=>{const sal=lu.reduce((a,p)=>a+p.salary,0);const d=el('div','lu');
-    d.innerHTML=`<span style="color:var(--dim)">#${i+1}</span> `+lu.map(p=>`<span class="slot">${p.slot}</span> ${p.name.split(' ').slice(-1)[0]}<span style="color:var(--dim)">·${p.team}</span>`).join('  ')+` <span style="float:right;color:${sal>50000||sal<48500?'var(--red)':'var(--dim)'}">$${sal}</span>`;
+  b.lineups.forEach((lu,i)=>{const sal=lu.reduce((a,p)=>a+p.salary,0);
+    const tc={};lu.filter(p=>!p.is_pitcher).forEach(p=>tc[p.team]=(tc[p.team]||0)+1);
+    const st=Object.entries(tc).sort((a,b2)=>b2[1]-a[1]).filter(x=>x[1]>=2).map(x=>`${x[0]}${x[1]}`).join('+');
+    const d=el('div','lu');
+    d.innerHTML=`<span style="color:var(--dim)">#${i+1}</span> <span class="pill p-sky" style="font-size:10px">${st||'no stack'}</span> `+lu.map(p=>`<span class="slot">${p.slot}</span> ${p.name.split(' ').slice(-1)[0]}<span style="color:var(--dim)">·${p.team}</span>`).join('  ')+` <span style="float:right;color:${sal>50000||sal<48500?'var(--red)':'var(--dim)'}">$${sal}</span>`;
     sc.appendChild(d);});
   c1.appendChild(sc); out.appendChild(c1);
   // #53 signals hard block
